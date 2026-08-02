@@ -13,6 +13,11 @@
 # 序列化模型保留：kotlinx.serialization 通过反射读写字段，混淆字段名会导致序列化错乱
 -keep class com.photon.remote.data.model.** { *; }
 
+# 图标说明（Todo 40 检查结论）：UI 图标均为代码内静态 ImageVector 引用
+# （DeviceType.icon() / Icons.Rounded.*），不存在"字符串键名 → 图标"的运行时映射，
+# RemoteButton.icon 字段当前未参与渲染，因此无需 IconMap 类 keep 规则；
+# 若未来引入字符串图标映射，需在此补充对应的 keep 或映射表防裁剪。
+
 # 通用保留属性：注解（Room/序列化校验依赖）、泛型签名、内部类/封闭方法结构
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
 
