@@ -24,8 +24,11 @@ import com.photon.remote.ir.transmitter.IrDispatcher
 import com.photon.remote.ir.transmitter.TransmitterManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import net.irext.decode.sdk.utils.Constants
 
@@ -124,6 +127,17 @@ class AddDeviceViewModel(
     /** 是否为机顶盒（决定是否有地区分页） */
     val isStbAreaStep: Boolean
         get() = selectedType.value == DeviceType.STB
+
+    // FIX-1：向导"下一步"按钮使能状态——combine 各选择状态实时推导
+    // （修复选品牌后按钮不刷新的 Compose 观察缺陷：UI 侧 collectAsState 本 state
+    // 后，任一选择/翻页变化都会立即重算按钮 enabled，不再依赖按钮作用域外读值）。
+    // 按当前步骤判断，逻辑：有类型→有品牌→(STB?有运营商:有码组)→(STB?有码组)。
+    val nextEnabled: StateFlow<Boolean> =
+        combine(
+            selectedType, selectedBrand, selectedCode, selectedOperator, currentPage,
+        ) { _, _, _, _, page ->
+            isNextEnabled(page)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // ---------- 步骤推进 ----------
 

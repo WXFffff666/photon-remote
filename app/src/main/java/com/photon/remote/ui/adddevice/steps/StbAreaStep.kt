@@ -54,6 +54,19 @@ fun StbAreaStep(viewModel: AddDeviceViewModel) {
     val selectedCity by viewModel.selectedCity.collectAsState()
     val selectedOperator by viewModel.selectedOperator.collectAsState()
     val locatingState by viewModel.locatingState.collectAsState()
+    val brandHasAreas by viewModel.brandHasAreas.collectAsState()
+
+    // FIX-2：无地区品牌本应自动跳过地区页；此处为仅发生一次跳转后的兜底
+    // （用户从型号页"上一步"手动回到地区页）——显示空态文案，引导返回更换品牌。
+    if (!brandHasAreas) {
+        Text(
+            "该品牌无地区数据，可返回更换品牌",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+        )
+        return
+    }
 
     // 运行时定位权限请求（Todo 49）：授权 → 定位匹配；拒绝 → 提示手动选择
     val context = LocalContext.current

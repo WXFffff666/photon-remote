@@ -28,6 +28,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -68,10 +71,16 @@ fun AddDeviceScreen(
     }
     val currentPage by viewModel.currentPage.collectAsState()
     val selectedType by viewModel.selectedType.collectAsState()
+    val selectedBrand by viewModel.selectedBrand.collectAsState()
     val brandHasAreas by viewModel.brandHasAreas.collectAsState()
     val savedId by viewModel.savedDeviceId.collectAsState()
 
     val pagerState = rememberPagerState(pageCount = { viewModel.pageCount })
+
+    // FIX-2：STB 品牌无地区数据 → 仅自动跳过地区页一次（置 areaAutoSkipped），
+    // 避免用户从型号页按"上一步"回地区页时被再次自动弹回、无法返回品牌页。
+    // 品牌变更时重置标记，新品牌重新按有无地区判断。
+    var areaAutoSkipped by rememberSaveable { mutableStateOf(false) }
 
     // 分页器 → VM 同步（用户滑动回写）
     LaunchedEffect(pagerState) {
@@ -81,11 +90,16 @@ fun AddDeviceScreen(
     LaunchedEffect(currentPage) {
         if (pagerState.currentPage != currentPage) pagerState.animateScrollToPage(currentPage)
     }
-    // STB 品牌无地区数据 → 自动跳过地区页（第 2 页）
-    LaunchedEffect(currentPage, brandHasAreas) {
-        if (currentPage == 2 && viewModel.isStbAreaStep && !brandHasAreas && viewModel.selectedBrand.value != null) {
+    // STB 品牌无地区数据 → 自动跳过地区页（仅一次，品牌变更后重置可再次触发）
+    LaunchedEffect(currentPage, brandHasAreas, selectedBrand, areaAutoSkipped) {
+        if (currentPage == 2 && viewModel.isStbAreaStep && !brandHasAreas && selectedBrand != null && !areaAutoSkipped) {
+            areaAutoSkipped = true
             viewModel.nextPage()
         }
+    }
+    // 品牌变更 → 重置自动跳过标记（新品牌可能带地区数据，需重新按当前品牌判断）
+    LaunchedEffect(selectedBrand) {
+        areaAutoSkipped = false
     }
     // 保存成功 → 退出向导
     LaunchedEffect(savedId) {
@@ -122,9 +136,13 @@ fun AddDeviceScreen(
                     ) { Text("上一步") }
                     Spacer(Modifier.weight(1f))
                     if (currentPage < viewModel.pageCount - 1) {
+                        // FIX-1：按钮在 bottomBar 作用域内 collectAsState 收集
+                        // nextEnabled（combine 推导的实时 StateFlow），选品牌/型号/
+                        // 运营商后 enabled 立即重合成刷新，不再读取静态函数值。
+                        val nextEnabled by viewModel.nextEnabled.collectAsState()
                         Button(
                             onClick = viewModel::nextPage,
-                            enabled = viewModel.isNextEnabled(currentPage),
+                            enabled = nextEnabled,
                         ) { Text("下一步") }
                     }
                 }
