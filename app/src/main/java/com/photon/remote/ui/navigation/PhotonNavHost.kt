@@ -19,6 +19,8 @@ import com.photon.remote.data.model.DeviceType
 import com.photon.remote.ui.ac.AcPanelScreen
 import com.photon.remote.ui.adddevice.AddDeviceScreen
 import com.photon.remote.ui.home.HomeScreen
+import com.photon.remote.ui.macro.MacroEditScreen
+import com.photon.remote.ui.macro.MacroListScreen
 import com.photon.remote.ui.remote.RemoteScreen
 
 /**
@@ -29,8 +31,10 @@ import com.photon.remote.ui.remote.RemoteScreen
  *   addDevice              添加设备向导（全屏）
  *   remote/{deviceId}      遥控器页（deviceId = LongType）
  *   acpanel/{deviceId}     空调面板（deviceId = LongType）
+ *   macro                  宏列表
+ *   macroEdit/{id?}        宏编辑（id 缺省 = 新建，LongType 可选参数）
  *
- * 后续 UI worker 接入的路由（占位注释）：macro / importExport / finder / settings。
+ * 后续 UI worker 接入的路由（占位注释）：importExport / finder / settings。
  * NavigationSuiteScaffold 按窗口宽度自动切换：Compact/Medium = 底部导航栏，
  * Expanded（平板横屏）= 左侧 NavigationRail；底部导航项随对应页面一并接入。
  */
@@ -98,7 +102,30 @@ fun PhotonNavHost() {
                 )
             }
 
-            // TODO(后续 UI worker 接入)：macro（宏列表+编辑）/ importExport（导入导出）/
+            // 宏列表（底部导航项由导航 worker 接入）
+            composable("macro") {
+                MacroListScreen(
+                    onCreateClick = { navController.navigate("macroEdit") },
+                    onEditClick = { id -> navController.navigate("macroEdit/$id") },
+                )
+            }
+
+            // 宏编辑（新建 id 缺省；编辑 id 为宏 id，LongType 可选参数）
+            composable(
+                route = "macroEdit/{id?}",
+                arguments = listOf(navArgument("id") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }),
+            ) { entry ->
+                val id = entry.arguments?.getLong("id") ?: -1L
+                MacroEditScreen(
+                    macroId = id.takeIf { it > 0 },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            // TODO(后续 UI worker 接入)：importExport（导入导出）/
             // finder（暴力找码）/ settings（设置）路由，由对应页面 worker 追加
         }
     }

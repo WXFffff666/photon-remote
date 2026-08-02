@@ -1,7 +1,10 @@
 package com.photon.remote.di
 
+import android.app.Application
 import android.content.Context
 import android.os.Vibrator
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import com.photon.remote.codebase.CodeResolver
 import com.photon.remote.codebase.IrdbCsvParser
 import com.photon.remote.codebase.IrextBinaryStore
@@ -20,6 +23,7 @@ import com.photon.remote.ir.transmitter.ConsumerIrTransmitter
 import com.photon.remote.ir.transmitter.IrDispatcher
 import com.photon.remote.ir.transmitter.TransmitterManager
 import com.photon.remote.ir.transmitter.UsbIrTransmitter
+import com.photon.remote.viewmodel.MacroViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -110,6 +114,27 @@ class AppContainer(context: Context) {
 
     /** 协议编码器表（RemoteKey 长按连发间隔查询：encoder.repeatIntervalMs ?: 250） */
     val encoders: Map<ProtocolType, IrProtocolEncoder> = ProtocolEncoders.all
+
+    // ---------- 页面 ViewModel 工厂（Todo 33 宏 UI 追加） ----------
+
+    /**
+     * 宏页面 ViewModel 工厂（懒加载）。
+     *
+     * MacroViewModel 为 AndroidViewModel：依赖从容器统一获取
+     * （getApplication<PhotonApplication>().container），页面经
+     * `viewModel(key = ..., factory = app.container.macroViewModelFactory)` 使用。
+     */
+    val macroViewModelFactory: ViewModelProvider.Factory by lazy {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                if (modelClass.isAssignableFrom(MacroViewModel::class.java)) {
+                    return MacroViewModel(appContext as Application) as T
+                }
+                throw IllegalArgumentException("未知 ViewModel 类型：${modelClass.name}")
+            }
+        }
+    }
 }
 
 /**
