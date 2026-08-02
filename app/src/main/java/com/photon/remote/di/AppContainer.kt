@@ -1,15 +1,25 @@
 package com.photon.remote.di
 
 import android.content.Context
+import android.os.Vibrator
 import com.photon.remote.codebase.CodeResolver
 import com.photon.remote.codebase.IrdbCsvParser
 import com.photon.remote.codebase.IrextBinaryStore
 import com.photon.remote.codebase.IrextIndexLoader
+import com.photon.remote.data.local.AppDatabase
 import com.photon.remote.data.local.SettingsStore
 import com.photon.remote.data.local.settingsStore
 import com.photon.remote.data.model.ACStatusData
+import com.photon.remote.data.repository.DeviceRepository
+import com.photon.remote.ir.core.IrProtocolEncoder
+import com.photon.remote.ir.core.ProtocolType
 import com.photon.remote.ir.irext.IrextDecoder
 import com.photon.remote.ir.protocol.ProtocolEncoders
+import com.photon.remote.ir.transmitter.AudioIrTransmitter
+import com.photon.remote.ir.transmitter.ConsumerIrTransmitter
+import com.photon.remote.ir.transmitter.IrDispatcher
+import com.photon.remote.ir.transmitter.TransmitterManager
+import com.photon.remote.ir.transmitter.UsbIrTransmitter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,13 +34,17 @@ import java.util.concurrent.ConcurrentHashMap
  * 组装码库层全部依赖：索引加载器 → 二进制码库 → CSV 解析器 → CodeResolver，
  * 以及应用级 AC 状态缓存（[ACStatusCache]，供 CodeResolver.currentAcStatus 回调）。
  *
- * 最小可用版本：仅提供本阶段（Todo 18-21）所需；后续 Todo 的仓库/发射器
- * 依赖由各自 worker 追加。
+ * UI 阶段（Todo 26-31）追加：数据层（Room 数据库 + 设备仓储）、红外发射层
+ * （内置/USB/音频发射器 + 路径路由 + 串行调度器）、协议编码器表（长按重复间隔
+ * 查询用）。页面 ViewModel 通过 PhotonApplication.container 访问本容器。
  */
 class AppContainer(context: Context) {
 
     /** 应用级协程作用域（AC 状态回写等后台任务用，App 生命周期跟随） */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** 应用 Context（单例，避免 Activity 泄漏） */
+    private val appContext = context.applicationContext
 
     /** DataStore 设置存储（AC 状态持久化落点） */
     val settingsStore: SettingsStore = SettingsStore(context.settingsStore)
@@ -61,6 +75,41 @@ class AppContainer(context: Context) {
         encoders = ProtocolEncoders.all,
         currentAcStatus = { deviceId -> acStatusCache.get(deviceId)?.toIrextBean() },
     )
+
+    // ---------- 数据层（Todo 26-31 UI 阶段追加） ----------
+
+    /** Room 数据库（devices / remote_buttons / macros 三表） */
+    val database: AppDatabase = AppDatabase.getInstance(appContext)
+
+    /** 设备仓储（设备 + 按键 + 宏 统一入口） */
+    val repository: DeviceRepository = DeviceRepository(
+        database.deviceDao(), database.buttonDao(), database.macroDao(),
+    )
+
+    // ---------- 红外发射层（Todo 26-31 UI 阶段追加） ----------
+
+    /** 系统震动服务（内置红外发送反馈用） */
+    val vibrator: Vibrator =
+        appContext.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+
+    /** 内置红外发射器（ConsumerIrManager） */
+    val consumerIr: ConsumerIrTransmitter = ConsumerIrTransmitter(appContext, vibrator)
+
+    /** USB 红外外设发射器 */
+    val usbIr: UsbIrTransmitter = UsbIrTransmitter(appContext)
+
+    /** 音频转红外发射器（无红外手机降级路径） */
+    val audioIr: AudioIrTransmitter = AudioIrTransmitter()
+
+    /** 发射路径路由（auto：USB→内置→音频，可手动指定） */
+    val transmitterManager: TransmitterManager =
+        TransmitterManager(consumerIr, usbIr, audioIr, settingsStore)
+
+    /** IR 发送调度器（单线程串行队列，所有发送/解码必须经它） */
+    val irDispatcher: IrDispatcher = IrDispatcher(transmitterManager::transmit)
+
+    /** 协议编码器表（RemoteKey 长按连发间隔查询：encoder.repeatIntervalMs ?: 250） */
+    val encoders: Map<ProtocolType, IrProtocolEncoder> = ProtocolEncoders.all
 }
 
 /**
