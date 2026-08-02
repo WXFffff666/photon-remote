@@ -81,12 +81,23 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         }
     }
 
+    // ---------- 码库在线更新版本（Todo 50：CodebaseUpdater 更新成功后写入） ----------
+
+    /** 当前生效的本地码库数据版本（空串 = 从未更新，使用内置 assets 版本） */
+    val codedbVersion: Flow<String> = dataStore.data.map { it[KEY_CODEDB_VERSION] ?: "" }
+
+    /** 记录更新后的码库数据版本（仅更新全流程成功时调用） */
+    suspend fun setCodedbVersion(version: String) {
+        dataStore.edit { it[KEY_CODEDB_VERSION] = version }
+    }
+
     companion object {
         private val KEY_THEME_MODE: Preferences.Key<String> = stringPreferencesKey("theme_mode")
         private val KEY_ACCENT_COLOR: Preferences.Key<Int> = intPreferencesKey("accent_color")
         private val KEY_HAPTIC: Preferences.Key<Boolean> = booleanPreferencesKey("haptic")
         private val KEY_TRANSMITTER_PATH: Preferences.Key<String> = stringPreferencesKey("transmitter_path")
         private val KEY_AUDIO_MODE: Preferences.Key<String> = stringPreferencesKey("audio_mode")
+        private val KEY_CODEDB_VERSION: Preferences.Key<String> = stringPreferencesKey("codedb_version")
         private const val AC_STATUS_KEY_PREFIX = "ac_status_"
 
         private const val DEFAULT_THEME_MODE = "system"

@@ -1,5 +1,6 @@
 package com.photon.remote.codebase
 
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -8,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import java.io.File
 
 /**
  * IrextIndexLoader 单元测试（计划 §4.1 / Todo 18 验收）。
@@ -97,5 +99,65 @@ class IrextIndexLoaderTest {
         // 不存在的 bin → null（不崩溃）
         assertFalse(loader.categoryIdOf("no_such.bin") != null)
         assertEquals(null, loader.findRemoteByBin("no_such.bin"))
+    }
+
+    // =====================================================================
+    // Todo 50：filesDir 缓存优先于 assets + reload()
+    // =====================================================================
+
+    @Test
+    fun filesDir缓存存在_优先于内置assets() {
+        val ctx = RuntimeEnvironment.getApplication()
+        val cacheFile = File(ctx.filesDir, "codedb/irext-index.json")
+        cacheFile.parentFile!!.mkdirs()
+        // 写一个合成缓存索引（版本标记 CACHE-1），与真实 assets 内容不同
+        val synthetic = IrextIndexData(version = "CACHE-1", categories = emptyList())
+        cacheFile.writeText(Json.encodeToString(IrextIndexData.serializer(), synthetic))
+        try {
+            val loader = IrextIndexLoader(ctx)
+            assertEquals("应读取缓存版本", "CACHE-1", loader.version)
+            assertTrue("缓存索引 categories 为空", loader.getCategories().isEmpty())
+        } finally {
+            cacheFile.delete()
+        }
+    }
+
+    @Test
+    fun 删除缓存后reload_回退内置assets() {
+        val ctx = RuntimeEnvironment.getApplication()
+        val cacheFile = File(ctx.filesDir, "codedb/irext-index.json")
+        cacheFile.parentFile!!.mkdirs()
+        val synthetic = IrextIndexData(version = "CACHE-1", categories = emptyList())
+        cacheFile.writeText(Json.encodeToString(IrextIndexData.serializer(), synthetic))
+        val loader = IrextIndexLoader(ctx)
+        assertEquals("CACHE-1", loader.version)
+        // 删除缓存 + reload → 回退 assets（版本为真实内置版本）
+        cacheFile.delete()
+        loader.reload()
+        assertTrue("reload 后应重新读取 assets", loader.getCategories().isNotEmpty())
+        assertTrue(loader.version.isNotEmpty())
+    }
+
+    @Test
+    fun 缓存损坏_自动回退assets并清理() {
+        val ctx = RuntimeEnvironment.getApplication()
+        val cacheFile = File(ctx.filesDir, "codedb/irext-index.json")
+        cacheFile.parentFile!!.mkdirs()
+        cacheFile.writeText("这不是合法 JSON{{{")
+        try {
+            val loader = IrextIndexLoader(ctx)
+            assertTrue("损坏缓存应回退 assets", loader.getCategories().isNotEmpty())
+            assertFalse("损坏缓存应被清理", cacheFile.exists())
+        } finally {
+            cacheFile.delete()
+        }
+    }
+
+    @Test
+    fun reload_不改变纯字符串构造行为() {
+        val loader = IrextIndexLoader("{\"version\":\"1.0\",\"categories\":[]}")
+        assertEquals("1.0", loader.version)
+        loader.reload()   // 不崩溃，重新解析同源 JSON
+        assertEquals("1.0", loader.version)
     }
 }

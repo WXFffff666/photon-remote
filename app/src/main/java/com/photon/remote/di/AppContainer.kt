@@ -10,6 +10,7 @@ import com.photon.remote.codebase.IrdbCsvParser
 import com.photon.remote.codebase.IrextBinaryStore
 import com.photon.remote.codebase.IrextIndexLoader
 import com.photon.remote.codebase.location.LocationResolver
+import com.photon.remote.codebase.update.CodebaseUpdater
 import com.photon.remote.data.local.AppDatabase
 import com.photon.remote.data.local.SettingsStore
 import com.photon.remote.data.local.settingsStore
@@ -28,6 +29,7 @@ import com.photon.remote.viewmodel.FinderViewModel
 import com.photon.remote.viewmodel.ImportExportViewModel
 import com.photon.remote.viewmodel.MacroViewModel
 import com.photon.remote.viewmodel.SettingsViewModel
+import com.photon.remote.viewmodel.UpdateViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -68,6 +70,15 @@ class AppContainer(context: Context) {
 
     /** 定位解析器（Todo 49：LocationManager + Geocoder，原生 API，不引入 Play Services） */
     val locationResolver: LocationResolver = LocationResolver(appContext)
+
+    // ---------- 码库在线更新（Todo 50：全量/增量 + SHA-256 + 回滚） ----------
+
+    /**
+     * 码库在线更新器（filesDir 缓存优先于内置 assets；更新产物写入
+     * filesDir/codedb/，失败回滚，内置 assets 永不写入）。
+     */
+    val codebaseUpdater: CodebaseUpdater =
+        CodebaseUpdater(appContext, indexLoader, binaryStore, settingsStore)
 
     /** 应用级 AC 状态内存缓存（启动自 SettingsStore 水合、变更回写） */
     val acStatusCache: ACStatusCache = ACStatusCache(settingsStore, scope)
@@ -184,6 +195,19 @@ class AppContainer(context: Context) {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
                     return SettingsViewModel(appContext as Application) as T
+                }
+                throw IllegalArgumentException("未知 ViewModel 类型：${modelClass.name}")
+            }
+        }
+    }
+
+    /** 码库更新 ViewModel 工厂（懒加载，设置页「码库更新」区使用） */
+    val updateViewModelFactory: ViewModelProvider.Factory by lazy {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                if (modelClass.isAssignableFrom(UpdateViewModel::class.java)) {
+                    return UpdateViewModel(appContext as Application) as T
                 }
                 throw IllegalArgumentException("未知 ViewModel 类型：${modelClass.name}")
             }

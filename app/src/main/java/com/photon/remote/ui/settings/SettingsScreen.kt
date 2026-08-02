@@ -175,6 +175,13 @@ fun SettingsScreen() {
                 }
             }
 
+            // ---------- 码库更新（Todo 50：全量/增量 + SHA-256 防篡改 + 安全回滚） ----------
+            item {
+                SettingsCard(title = "码库更新") {
+                    UpdateSection()
+                }
+            }
+
             // ---------- 关于 ----------
             item {
                 SettingsCard(title = "关于") {

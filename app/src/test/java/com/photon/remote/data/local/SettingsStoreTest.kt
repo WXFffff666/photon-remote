@@ -97,10 +97,19 @@ class SettingsStoreTest {
     }
 
     @Test
-    fun ACStatusData_非法字符串返回null() {
+    fun AC状态_非法字符串返回null() {
         assertNull(ACStatusData.fromStorageString(""))
         assertNull(ACStatusData.fromStorageString("1,2,3"))
         assertNull(ACStatusData.fromStorageString("1,2,3,4,5,abc"))
         assertNull(ACStatusData.fromStorageString("1,2,3,4,5,6,7"))
+    }
+
+    @Test
+    fun 码库版本_默认空_读写往返() = runBlocking {
+        assertEquals("", store.codedbVersion.first())
+        store.setCodedbVersion("1.1")
+        assertEquals("1.1", store.codedbVersion.first())
+        store.setCodedbVersion("20260801")
+        assertEquals("20260801", store.codedbVersion.first())
     }
 }

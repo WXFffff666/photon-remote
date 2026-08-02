@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.irext.decode.sdk.utils.Constants
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.zip.ZipInputStream
 
 /**
@@ -26,10 +27,12 @@ data class IrextBinaryRef(
 )
 
 /**
- * IREXT 二进制码库按需读取（计划 §4.3 / Todo 19）。
+ * IREXT 二进制码库按需读取（计划 §4.3 / Todo 19，Todo 50 追加缓存优先）。
  *
- * assets/irext/irext-binaries.zip（官方 1.76MB、5126 个 .bin，根目录
- * irext-binaries_<version>/）按需解压读取 + 内存 LRU 缓存：
+ * 数据源优先级：**filesDir 缓存目录（filesDir/codedb/binaries/）> 内置 assets zip**
+ * （assets/irext/irext-binaries.zip，官方 1.76MB、5126 个 .bin，根目录
+ * irext-binaries_<version>/）。缓存由 CodebaseUpdater 更新时写入并校验；
+ * 按需读取 + 内存 LRU 缓存：
  *   - [load] 返回 [IrextBinaryRef]（bytes + binaryName + category + subCate）；
  *   - category/subCate 从索引（IrextIndexLoader）解析，索引查不到时按 bin 文件名
  *     启发式兜底（irext bin 命名含品类片段，如 _ac_ / _box_ / _tv_）；
@@ -56,16 +59,35 @@ class IrextBinaryStore(
      * 按 bin 文件名读取码组。
      *
      * @param ref 设备 codeRef（bin 文件名，如 "irda_new_ac_9377.bin"）
-     * @return 包装对象；zip 无此文件 / 索引查不到类别 / 任何异常返回 null
+     * @return 包装对象；缓存/zip 均无此文件 / 索引查不到类别 / 任何异常返回 null
      */
     suspend fun load(ref: String): IrextBinaryRef? = withContext(Dispatchers.IO) {
-        val bytes = readCached(ref) ?: readFromZip(ref)?.also { putCached(ref, it) }
+        val bytes = readCached(ref)
+            ?: readFromCacheDir(ref)?.also { putCached(ref, it) }
+            ?: readFromZip(ref)?.also { putCached(ref, it) }
             ?: return@withContext null
         // category/subCate 从索引 remote 记录解析（Todo 19 验收：包装对象含两者）
         val category = indexLoader.categoryIdOf(ref) ?: categoryFromBinName(ref)
             ?: return@withContext null
         val subCate = if (category == Constants.CategoryID.AIR_CONDITIONER.getValue()) 0 else 1
         IrextBinaryRef(ref, bytes, category, subCate)
+    }
+
+    /** 更新完成后调用：清空内存 LRU（防止旧版本二进制字节残留） */
+    fun clearCache() {
+        synchronized(lock) { byteCache.clear() }
+    }
+
+    // ---------- filesDir 缓存目录读取（CodebaseUpdater 写入，优先于 assets） ----------
+
+    /** 从 filesDir/codedb/binaries/ 读取（缓存文件存在即返回其字节） */
+    private fun readFromCacheDir(ref: String): ByteArray? {
+        // 防御：只取文件名段，禁止目录穿越（ref 理论来自索引，防御性检查）
+        val name = ref.substringAfterLast('/')
+        if (name.isBlank() || name.contains("..") || name.contains('/') || name.contains('\\')) return null
+        val file = File(context.filesDir, "$CACHE_DIR/$name")
+        if (!file.isFile) return null
+        return runCatching { file.readBytes() }.getOrNull()
     }
 
     // ---------- zip 按需解压 ----------
@@ -157,6 +179,9 @@ class IrextBinaryStore(
     private companion object {
         /** assets 内 zip 路径（计划 §1） */
         const val ZIP_ASSET = "irext/irext-binaries.zip"
+
+        /** filesDir 缓存目录（CodebaseUpdater 写入，优先于 assets zip） */
+        const val CACHE_DIR = "codedb/binaries"
 
         /** 内存缓存条数上限（单个 .bin 数 KB~数十 KB，24 条约几百 KB 量级） */
         const val MAX_CACHE_ENTRIES = 24

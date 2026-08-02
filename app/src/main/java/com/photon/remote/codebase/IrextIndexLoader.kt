@@ -3,6 +3,7 @@ package com.photon.remote.codebase
 import android.content.Context
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.File
 
 // ---------- 索引 JSON 数据类（计划 §4.1 结构，字段与 assets/irext/irext-index.json 对齐） ----------
 
@@ -77,35 +78,52 @@ data class IrextRemote(
 )
 
 /**
- * IREXT 索引加载器（计划 §4.1 / Todo 18）。
+ * IREXT 索引加载器（计划 §4.1 / Todo 18，Todo 50 追加缓存优先）。
  *
- * 读取 assets/irext/irext-index.json（约 0.75MB，16 个设备大类），以 kotlinx.serialization
- * 解析后常驻内存，提供品牌/省市/运营商/遥控器五级查询 API。
+ * 数据源优先级：**filesDir 缓存（filesDir/codedb/irext-index.json）> 内置 assets**。
+ * 缓存由 CodebaseUpdater 写入（写入前已做 SHA-256 校验 + 解析自检），存在即优先；
+ * 缓存不存在/损坏时回退 assets（内置 assets 不可变，永不写入）。更新完成后调用
+ * [reload] 清空解析缓存，下次查询自动读取新版本。
  *
- * 主构造器直接注入 JSON 字符串（纯 JVM 可测）；[IrextIndexLoader] 的应用入口
- * [IrextIndexLoader]（Context 重载）从 assets 读取。解析惰性执行（首次查询触发）。
+ * 主构造器直接注入 JSON 字符串提供器（纯 JVM 可测）；应用入口 [IrextIndexLoader]
+ *（Context 重载）按上述优先级读取。解析惰性执行（首次查询触发）。
  */
-class IrextIndexLoader(private val json: String) {
+class IrextIndexLoader(private val jsonProvider: () -> String) {
 
-    /** 应用入口：从 assets 读取索引 JSON */
-    constructor(context: Context) : this(readAsset(context))
+    /** 纯 JSON 字符串构造（纯 JVM 可测） */
+    constructor(json: String) : this({ json })
 
-    /** 惰性解析 + 内存缓存（仅解析一次） */
-    private val index: IrextIndexData by lazy {
-        Json { ignoreUnknownKeys = true }.decodeFromString(IrextIndexData.serializer(), json)
+    /** 应用入口：filesDir 缓存优先，否则 assets */
+    constructor(context: Context) : this({ readBestSource(context) })
+
+    /** 解析缓存（reload() 清空后下次查询重新读取磁盘/内存提供器） */
+    @Volatile
+    private var parsed: IrextIndexData? = null
+
+    private fun load(): IrextIndexData {
+        parsed?.let { return it }
+        val data = Json { ignoreUnknownKeys = true }
+            .decodeFromString(IrextIndexData.serializer(), jsonProvider())
+        parsed = data
+        return data
+    }
+
+    /** 更新后刷新：清空解析缓存，下次查询重新读取（filesDir 缓存已更新为新版本） */
+    fun reload() {
+        parsed = null
     }
 
     /** 索引版本号（IrextBinaryStore 定位 zip 根目录前缀用） */
-    val version: String get() = index.version
+    val version: String get() = load().version
 
     // ---------- 查询 API（计划 §4.1 / Todo 18 验收） ----------
 
     /** 全部设备大类（categories 非空 = 索引加载成功） */
-    fun getCategories(): List<IrextCategory> = index.categories
+    fun getCategories(): List<IrextCategory> = load().categories
 
     /** 按大类 id 查品牌列表（categoryId = irext Constants.CategoryID，如 TV=2 / STB=3 / AC=1） */
     fun getBrands(categoryId: Int): List<IrextBrand> =
-        index.categories.firstOrNull { it.id == categoryId }?.brands ?: emptyList()
+        load().categories.firstOrNull { it.id == categoryId }?.brands ?: emptyList()
 
     /** 按品牌 id 查省列表（仅 STB 品牌非空） */
     fun getAreas(brandId: Int): List<IrextArea> =
@@ -142,14 +160,14 @@ class IrextIndexLoader(private val json: String) {
 
     /** 按品牌 id 全局查找（品牌 id 在全部大类中唯一） */
     private fun findBrand(brandId: Int): IrextBrand? =
-        index.categories.asSequence().flatMap { it.brands }.firstOrNull { it.id == brandId }
+        load().categories.asSequence().flatMap { it.brands }.firstOrNull { it.id == brandId }
 
     /**
      * 全局遍历所有遥控器记录（品牌直属 + 运营商链路），同时带出所属大类。
      * 用 Sequence 惰性求值：find 命中即停，无需展开全部记录。
      */
     private fun allRemotes(): Sequence<Pair<IrextRemote, IrextCategory>> =
-        index.categories.asSequence().flatMap { cat ->
+        load().categories.asSequence().flatMap { cat ->
             cat.brands.asSequence().flatMap { brand ->
                 val direct = brand.remotes.asSequence().map { it to cat }
                 val nested = brand.areas.asSequence().flatMap { area ->
@@ -167,8 +185,30 @@ class IrextIndexLoader(private val json: String) {
         /** assets 内索引路径（计划 §1） */
         const val ASSET_PATH = "irext/irext-index.json"
 
+        /** filesDir 缓存相对路径（CodebaseUpdater 写入并校验，更新缓存优先于内置 assets） */
+        const val CACHE_RELATIVE_PATH = "codedb/irext-index.json"
+
         /** 读取 assets 索引全文（UTF-8；0.75MB 单次读入内存缓存） */
         private fun readAsset(context: Context): String =
             context.assets.open(ASSET_PATH).bufferedReader(Charsets.UTF_8).use { it.readText() }
+
+        /**
+         * 最佳数据源：filesDir 缓存优先（CodebaseUpdater 写入前已做 SHA-256 校验 +
+         * 解析自检，存在即信任）；缓存损坏则删除并回退 assets，避免反复踩坑。
+         * 内置 assets 永不写入，始终可作为兜底。
+         */
+        private fun readBestSource(context: Context): String {
+            val cached = File(context.filesDir, CACHE_RELATIVE_PATH)
+            val cachedText = runCatching { cached.readText() }.getOrNull()
+            if (cachedText != null) {
+                val valid = runCatching {
+                    Json { ignoreUnknownKeys = true }
+                        .decodeFromString(IrextIndexData.serializer(), cachedText)
+                }.isSuccess
+                if (valid) return cachedText
+                runCatching { cached.delete() }
+            }
+            return readAsset(context)
+        }
     }
 }

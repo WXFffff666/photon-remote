@@ -70,6 +70,18 @@ android {
             isIncludeAndroidResources = true
         }
     }
+    // APK 产物文件名：PhotonRemote-<buildType>-v<versionName>.apk（release/debug 都改）
+    // AGP 8.9 的 androidComponents.VariantOutput 公开 API 已移除 outputFileName（仅剩 versionName/versionCode），
+    // 官方 Gradle Recipe 的替代做法是监听 SingleArtifact.APK 复制改名。此处用 AGP 8.x 仍支持的
+    // applicationVariants（弃用但可用，AGP 9 才移除）直接改写产物文件名，产物仍落在标准目录。
+    applicationVariants.configureEach {
+        val variant = this
+        outputs.configureEach {
+            val apkOutput = this as com.android.build.gradle.api.ApkVariantOutput
+            val apkName = "PhotonRemote-${variant.buildType.name}-v${variant.mergedFlavor.versionName}.apk"
+            apkOutput.outputFileName = apkName
+        }
+    }
 }
 
 // Room schema 导出目录（KSP 生成 database schema JSON，验收项：schema 目录生成）
