@@ -33,6 +33,17 @@ android {
     kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
     buildFeatures { compose = true }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    testOptions {
+        unitTests {
+            // Robolectric 需要打包 Android 资源（Room in-memory 单测用）
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+// Room schema 导出目录（KSP 生成 database schema JSON，验收项：schema 目录生成）
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -58,4 +69,8 @@ dependencies {
     implementation(libs.androidx.adaptive.layout)
     implementation(libs.androidx.adaptive.navigation)
     testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
+    // Room in-memory 单测（Robolectric 提供 Android 框架环境）
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
 }
