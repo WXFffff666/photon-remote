@@ -1,11 +1,21 @@
 package com.photon.remote.ui.home
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.VerticalAlignBottom
+import androidx.compose.material.icons.rounded.VerticalAlignTop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -15,13 +25,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.photon.remote.data.local.entity.Device
 
 /**
- * 首页长按菜单配套对话框（计划 §5.3 / Todo 26）：
- * 重命名 / 删除确认 / 排序（输入目标位置）。拆分自 HomeScreen 以控制单文件行数。
+ * 首页长按菜单配套对话框（计划 §5.3 / Todo 26 + Todo 38 排序增强）：
+ * 重命名 / 删除确认 / 移动排序（移到顶部、上移、下移、移到底部）。
+ * 拆分自 HomeScreen 以控制单文件行数。
  */
 
 /** 重命名对话框 */
@@ -60,29 +71,48 @@ fun DeleteConfirmDialog(device: Device, onDismiss: () -> Unit, onConfirm: () -> 
     )
 }
 
-/** 排序对话框：输入目标位置（0..maxIndex），确认后移动设备 */
+/**
+ * 移动排序对话框（计划 §5.3 / Todo 38）：移到顶部 / 上移 / 下移 / 移到底部。
+ * 对应 HomeViewModel.moveToTop/moveUp/moveDown/moveToBottom → Repository.moveDevice
+ * （以底层 sortOrder 顺序定位，排序持久化，重启保留）。
+ */
 @Composable
-fun SortDialog(device: Device, maxIndex: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
-    var text by remember(device.id) { mutableStateOf("") }
-    val index = text.toIntOrNull()
+fun MoveSortDialog(
+    device: Device,
+    onDismiss: () -> Unit,
+    onMoveToTop: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveToBottom: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("排序") },
+        title = { Text("移动排序") },
         text = {
             Column {
-                Text("把「${device.name}」移动到列表位置（0 到 $maxIndex）：", style = MaterialTheme.typography.bodyMedium)
+                Text("调整「${device.name}」在列表中的位置：", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MoveSortButton("移到顶部", Icons.Rounded.VerticalAlignTop, onMoveToTop)
+                    MoveSortButton("上移", Icons.Rounded.ArrowUpward, onMoveUp)
+                }
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it.filter(Char::isDigit) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MoveSortButton("下移", Icons.Rounded.ArrowDownward, onMoveDown)
+                    MoveSortButton("移到底部", Icons.Rounded.VerticalAlignBottom, onMoveToBottom)
+                }
             }
         },
-        confirmButton = {
-            TextButton(enabled = index != null && index in 0..maxIndex, onClick = { index?.let(onConfirm) }) { Text("确定") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
     )
+}
+
+/** 移动排序操作按钮（图标 + 文字） */
+@Composable
+private fun MoveSortButton(label: String, icon: ImageVector, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(label)
+    }
 }

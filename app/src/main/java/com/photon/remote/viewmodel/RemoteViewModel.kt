@@ -20,7 +20,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -57,20 +56,24 @@ class RemoteViewModel(
     val failedButtonId: StateFlow<Long?> = _failedButtonId.asStateFlow()
 
     init {
-        viewModelScope.launch { load() }
-    }
-
-    /** 加载设备 + 按键 + 打开 IREXT 会话（规则 a） */
-    private suspend fun load() {
-        // 从设备列表流中取目标设备（DeviceRepository 未暴露单设备查询，读现有 API）
-        val d = repository.devices.first().firstOrNull { it.id == deviceId } ?: return
-        _device.value = d
-        _buttons.value = repository.getButtons(deviceId)
-        // 规则 a：IREXT 设备进入页面打开会话；x86 无 so 时静默跳过
-        if (d.codeSource == CodeSource.IREXT && IrextDecoder.isAvailable) {
-            val ref = binaryStore.load(d.codeRef) ?: return
-            dispatcher.onQueue {
-                IrextDecoder.open(ref.binaryName, ref.category, ref.subCate, ref.bytes)
+        // 设备/按键跟随仓库流刷新：自定义布局保存/恢复默认（Todo 32 装配）后
+        // 返回本页自动生效；IREXT 会话在设备首次可用时打开一次（规则 a）
+        viewModelScope.launch {
+            var sessionOpened = false
+            repository.devices.collect { list ->
+                val d = list.firstOrNull { it.id == deviceId } ?: return@collect
+                _device.value = d
+                _buttons.value = repository.getButtons(deviceId)
+                if (!sessionOpened) {
+                    sessionOpened = true
+                    // 规则 a：IREXT 设备进入页面打开会话；x86 无 so 时静默跳过
+                    if (d.codeSource == CodeSource.IREXT && IrextDecoder.isAvailable) {
+                        val ref = binaryStore.load(d.codeRef) ?: return@collect
+                        dispatcher.onQueue {
+                            IrextDecoder.open(ref.binaryName, ref.category, ref.subCate, ref.bytes)
+                        }
+                    }
+                }
             }
         }
     }

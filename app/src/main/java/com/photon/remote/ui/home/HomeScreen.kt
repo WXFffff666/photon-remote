@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddToHomeScreen
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ManageSearch
@@ -57,19 +58,25 @@ import com.photon.remote.data.local.entity.Device
 import com.photon.remote.viewmodel.HomeViewModel
 
 /**
- * 首页设备列表（计划 §5.3 / Todo 26）。
+ * 首页设备列表（计划 §5.3 / Todo 26 + Todo 37-39）。
  *
  * 顶部"我的遥控器"标题 + 搜索框（品牌/型号模糊过滤）；设备卡片 2 列网格
  * （首字母色块 + 设备名 + 品牌/型号副标题 + 收藏星标）；空状态引导；
- * 长按卡片弹出菜单（收藏切换 / 重命名 / 排序 / 删除）；FAB 进入添加向导。
+ * 长按卡片弹出菜单（收藏切换 / 重命名 / 移动排序 / 添加到桌面 / 删除）；
+ * FAB 进入添加向导。
+ *
+ * @param onDeviceSelected 非空 = ListDetail 模式（平板双栏，Todo 37）：单击设备
+ *   回调选中（不跳页）；为空 = Compact 模式，单击走 [onDeviceClick] 跳页。
  */
 @Composable
 fun HomeScreen(
     onDeviceClick: (Device) -> Unit,
     onAddClick: () -> Unit,
+    onDeviceSelected: ((Device) -> Unit)? = null,
 ) {
     // ViewModel：依赖从手动 DI 容器（PhotonApplication.container）获取
     val app = LocalContext.current.applicationContext as PhotonApplication
+    val context = LocalContext.current
     val viewModel: HomeViewModel = viewModel { HomeViewModel(app.container.repository) }
     val devices by viewModel.devices.collectAsState()
     var searchText by remember { mutableStateOf("") }
@@ -120,11 +127,12 @@ fun HomeScreen(
                             device = device,
                             menuExpanded = menuDeviceId == device.id,
                             onMenuDismiss = { menuDeviceId = null },
-                            onClick = { onDeviceClick(device) },
+                            onClick = { onDeviceSelected?.invoke(device) ?: onDeviceClick(device) },
                             onLongClick = { menuDeviceId = device.id },
                             onFavorite = { viewModel.toggleFavorite(device) },
                             onRename = { menuDeviceId = null; renameTarget = device },
                             onSort = { menuDeviceId = null; sortTarget = device },
+                            onAddToDesktop = { menuDeviceId = null; requestPinDeviceShortcut(context, device) },
                             onDelete = { menuDeviceId = null; deleteTarget = device },
                         )
                     }
@@ -133,14 +141,23 @@ fun HomeScreen(
         }
     }
 
-    // 长按菜单对话框（重命名 / 排序 / 删除确认）
+    // 长按菜单对话框（重命名 / 移动排序 / 删除确认，Todo 38 排序增强）
     renameTarget?.let { device -> RenameDialog(device, onDismiss = { renameTarget = null }, onConfirm = { viewModel.renameDevice(device.id, it); renameTarget = null }) }
     deleteTarget?.let { device -> DeleteConfirmDialog(device, onDismiss = { deleteTarget = null }, onConfirm = { viewModel.deleteDevice(device); deleteTarget = null }) }
-    sortTarget?.let { device -> SortDialog(device, maxIndex = (devices.size - 1).coerceAtLeast(0), onDismiss = { sortTarget = null }, onConfirm = { index -> viewModel.moveDevice(device.id, index); sortTarget = null }) }
+    sortTarget?.let { device ->
+        MoveSortDialog(
+            device = device,
+            onDismiss = { sortTarget = null },
+            onMoveToTop = { viewModel.moveToTop(device.id); sortTarget = null },
+            onMoveUp = { viewModel.moveUp(device.id); sortTarget = null },
+            onMoveDown = { viewModel.moveDown(device.id); sortTarget = null },
+            onMoveToBottom = { viewModel.moveToBottom(device.id); sortTarget = null },
+        )
+    }
 }
 /**
  * 设备卡片：首字母色块（colorSeed 取色）+ 设备名 + 品牌/型号副标题 + 收藏星标。
- * 单击进入遥控器/空调页；长按弹出操作菜单。
+ * 单击进入遥控器/空调页（或 ListDetail 选中）；长按弹出操作菜单。
  */
 @Composable
 private fun DeviceCard(
@@ -152,6 +169,7 @@ private fun DeviceCard(
     onFavorite: () -> Unit,
     onRename: () -> Unit,
     onSort: () -> Unit,
+    onAddToDesktop: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val seedColor = remember(device.colorSeed) { Color(device.colorSeed) }
@@ -204,7 +222,7 @@ private fun DeviceCard(
                 )
             }
         }
-        // 长按菜单：收藏切换 / 重命名 / 排序 / 删除
+        // 长按菜单：收藏切换 / 重命名 / 移动排序 / 添加到桌面 / 删除
         DropdownMenu(expanded = menuExpanded, onDismissRequest = onMenuDismiss) {
             DropdownMenuItem(
                 text = { Text(if (device.isFavorite) "取消收藏" else "收藏") },
@@ -217,9 +235,15 @@ private fun DeviceCard(
                 onClick = onRename,
             )
             DropdownMenuItem(
-                text = { Text("排序") },
+                text = { Text("移动排序") },
                 leadingIcon = { Icon(Icons.Rounded.SwapHoriz, null) },
                 onClick = onSort,
+            )
+            // 桌面快捷方式（Todo 39）：ShortcutManagerCompat，兼容 minSdk 24
+            DropdownMenuItem(
+                text = { Text("添加到桌面") },
+                leadingIcon = { Icon(Icons.Rounded.AddToHomeScreen, null) },
+                onClick = onAddToDesktop,
             )
             DropdownMenuItem(
                 text = { Text("删除", color = MaterialTheme.colorScheme.error) },

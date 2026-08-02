@@ -52,6 +52,8 @@ import kotlinx.coroutines.launch
 fun RemoteKey(
     modifier: Modifier = Modifier,
     size: Dp = 64.dp,
+    width: Dp = Dp.Unspecified,    // 自定义布局：键宽（与 size 二选一，指定后按此渲染）
+    height: Dp = Dp.Unspecified,   // 自定义布局：键高（与 size 二选一，指定后按此渲染）
     shape: ButtonShape = ButtonShape.ROUNDED,
     icon: ImageVector? = null,
     label: String? = null,
@@ -116,7 +118,10 @@ fun RemoteKey(
                 scaleY = scale
                 shadowElevation = if (pressed) 0f else 4f
             }
-            .size(size)
+            .size(
+                width = if (width == Dp.Unspecified) size else width,
+                height = if (height == Dp.Unspecified) size else height,
+            )
             .then(gestureModifier),
         shape = if (shape == ButtonShape.CIRCLE) CircleShape else RoundedCornerShape(KEY_CORNER_RADIUS),
         color = bg,

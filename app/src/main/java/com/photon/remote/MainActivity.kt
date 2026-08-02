@@ -16,6 +16,8 @@ import com.photon.remote.ui.theme.PhotonTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 桌面快捷方式直达（Todo 39）：intent 携带 deviceId → 启动后直接进入对应遥控器/空调页
+        val launchDeviceId = intent?.getLongExtra(EXTRA_DEVICE_ID, -1L)?.takeIf { it > 0 }
         setContent {
             // 主题设置即时生效（Todo 36）：DataStore 流（主题模式 / 强调色）驱动 PhotonTheme，
             // 设置页保存后本组合立即重组，无需重启应用。
@@ -38,10 +40,15 @@ class MainActivity : ComponentActivity() {
                 accentSeed = accentSeed,
             ) {
                 // 自适应导航骨架（NavigationSuiteScaffold + NavHost：
-                // home / addDevice / remote/{deviceId} / acpanel/{deviceId} / macro /
-                // importExport / finder / settings）
-                PhotonNavHost()
+                // home / addDevice / remote/{deviceId} / acpanel/{deviceId} / layoutEditor/{deviceId} /
+                // macro / importExport / finder / settings）
+                PhotonNavHost(initialDeviceId = launchDeviceId)
             }
         }
+    }
+
+    companion object {
+        /** 桌面快捷方式直达参数（Todo 39）：deviceId，MainActivity 据此直接导航 */
+        const val EXTRA_DEVICE_ID = "deviceId"
     }
 }
