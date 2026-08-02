@@ -47,15 +47,26 @@ fun TestRemoteStep(viewModel: AddDeviceViewModel) {
     val isSaving by viewModel.isSaving.collectAsState()
     val testResult by viewModel.testResult.collectAsState()
     val selectedCode by viewModel.selectedCode.collectAsState()
+    val selectedBrand by viewModel.selectedBrand.collectAsState()
+    val selectedType by viewModel.selectedType.collectAsState()
     val snackbarHostState = SnackbarHostState()
 
     // 测试按键（按当前选中的码组构建，不入库）
     val powerButton = remember(viewModel.selectedCode.value?.codeRef) { viewModel.testButton("POWER") }
     val volUpButton = remember(viewModel.selectedCode.value?.codeRef) { viewModel.testButton("VOL_UP") }
 
+    // FIX-5：命名输入框预填品牌中文名（无则类型名）——进入测试页且用户未输入时生效
+    val defaultName = selectedBrand?.let { brand ->
+        if (brand.name.any { it in '\u4e00'..'\u9fff' }) brand.name else brand.displayName
+    } ?: selectedType?.label
+
     // 测试结果提示
     LaunchedEffect(testResult) {
         testResult?.let { snackbarHostState.showSnackbar(it) }
+    }
+    // 预填默认设备名（仅当用户尚未输入时）
+    LaunchedEffect(Unit) {
+        if (viewModel.deviceName.value.isBlank()) defaultName?.let(viewModel::setDeviceName)
     }
 
     Column(
@@ -68,9 +79,9 @@ fun TestRemoteStep(viewModel: AddDeviceViewModel) {
         SnackbarHost(snackbarHostState)
         Spacer(Modifier.height(8.dp))
 
-        // 当前码组信息
+        // 当前码组信息（FIX-6：显示友好名"型号 N"/CSV 型号名）
         Text(
-            selectedCode?.name ?: "未选择码组",
+            selectedCode?.displayName ?: "未选择码组",
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
@@ -114,13 +125,13 @@ fun TestRemoteStep(viewModel: AddDeviceViewModel) {
             Spacer(Modifier.height(16.dp))
         }
 
-        // 命名 + 保存
+        // 命名 + 保存（FIX-5：输入框预填品牌中文名，留空保存仍用品牌名）
         OutlinedTextField(
             value = deviceName,
             onValueChange = viewModel::setDeviceName,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("设备名称（可选）") },
-            placeholder = { Text("默认：${selectedCode?.name ?: "设备"}") },
+            placeholder = { Text("默认：${defaultName ?: "设备"}") },
             singleLine = true,
         )
         Spacer(Modifier.height(16.dp))

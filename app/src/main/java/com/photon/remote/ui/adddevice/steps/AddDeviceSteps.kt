@@ -106,7 +106,7 @@ fun TypeStep(selected: DeviceType?, onSelect: (DeviceType) -> Unit) {
     }
 }
 
-/** 步骤 2：品牌（搜索框 + 品牌列表；IREXT ∪ irdb，同名去重） */
+/** 步骤 2：品牌（搜索框 + 品牌列表；IREXT ∪ irdb，中英并显 + 跨源英文名归一去重） */
 @Composable
 fun BrandStep(
     brands: List<BrandOption>,
@@ -114,8 +114,9 @@ fun BrandStep(
     onSelect: (BrandOption) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
+    // FIX-4：搜索同时匹配 displayName（如搜 "pioneer"/"先锋" 都能命中 "先锋 Pioneer"）
     val filtered = brands.filter {
-        query.isBlank() || it.name.contains(query.trim(), ignoreCase = true)
+        query.isBlank() || it.displayName.contains(query.trim(), ignoreCase = true)
     }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         OutlinedTextField(
@@ -130,7 +131,8 @@ fun BrandStep(
         Spacer(Modifier.height(12.dp))
         if (filtered.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("没有找到品牌，试试其他类型", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // FIX-3：列表已按"有码组"过滤，空态引导换类型
+                Text("已为你筛选有码组的品牌，试试其他类型", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
@@ -152,7 +154,8 @@ fun BrandStep(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                brand.name,
+                                // FIX-4：显示中英并显名（如"先锋 Pioneer"）
+                                brand.displayName,
                                 style = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,
@@ -207,7 +210,8 @@ fun ModelStep(
                     ) {
                         ListItem(
                             headlineContent = {
-                                Text(code.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                // FIX-6：显示友好名（IREXT"型号 N"/irdb CSV 型号名）
+                                Text(code.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             },
                             trailingContent = {
                                 Text(

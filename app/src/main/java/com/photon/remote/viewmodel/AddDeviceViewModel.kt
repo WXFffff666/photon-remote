@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.photon.remote.codebase.CodeResolver
 import com.photon.remote.codebase.IrdbCode
 import com.photon.remote.codebase.IrdbCsvParser
+import com.photon.remote.codebase.IrextBrand
 import com.photon.remote.codebase.IrextIndexLoader
 import com.photon.remote.codebase.IrextOperator
 import com.photon.remote.codebase.IrextRemote
@@ -276,23 +277,55 @@ class AddDeviceViewModel(
 
     // ---------- 数据加载 ----------
 
-    /** 品牌列表：IREXT（该类型）∪ irdb（含该类型目录）；同名去重，IREXT 优先 */
+    /**
+     * 品牌列表：IREXT（该类型有码组的品牌）∪ irdb（含该类型目录的品牌）。
+     * - FIX-3：过滤无码组品牌（IREXT 品牌直挂 remotes 为空且 STB 地区链路也无
+     *   remotes 的剔除，irdb 品牌无对应类型 CSV 的剔除），避免"选了品牌型号列表
+     *   为空、下一步不可用"的死路；
+     * - FIX-4：跨源按英文名忽略大小写归一（IREXT"先锋"+irdb"Pioneer"合并为一条，
+     *   displayName="先锋 Pioneer"），未匹配的 irdb 品牌单独保留（英文名显示）。
+     */
     private fun loadBrands(type: DeviceType) {
         viewModelScope.launch {
-            val result = linkedMapOf<String, BrandOption>()
-            // irdb 部分：品牌存在对应类型目录（tv/ac/stb/audio/projector/other）
             val irdbType = type.irdbType()
+            // IREXT 部分：按英文名(小写)建表；同名冲突保留中文名条目（显示更友好）
+            val irextByEn = linkedMapOf<String, BrandOption>()
+            type.irextCategoryId()?.let { categoryId ->
+                indexLoader.getBrands(categoryId)
+                    .filter { it.hasUsableRemotes() }   // FIX-3：仅保留有码组品牌
+                    .forEach { brand ->
+                        val option = BrandOption(
+                            name = brand.name,
+                            source = CodeSource.IREXT,
+                            irextBrandId = brand.id,
+                            displayName = irextDisplayName(brand),
+                            enName = brand.nameEn.trim().ifBlank { null },
+                        )
+                        val key = (option.enName ?: brand.name).lowercase()
+                        val existing = irextByEn[key]
+                        if (existing == null || (!hasCjk(existing.name) && hasCjk(option.name))) {
+                            irextByEn[key] = option
+                        }
+                    }
+            }
+            // 合并结果：IREXT 品牌全量进入最终列表（displayName 已中英并显）
+            val result = linkedMapOf<String, BrandOption>()
+            irextByEn.values.forEach { result[it.name] = it }
+            // irdb 部分：英文名命中 IREXT 则合并（不重复显示）；未命中单独保留
             if (irdbType != null) {
                 irdbParser.listBrands().filter { irdbType in irdbParser.listTypes(it) }
-                    .forEach { result[it] = BrandOption(it, CodeSource.IRDB, null) }
+                    .forEach { irdbName ->
+                        if (irdbName.lowercase() !in irextByEn) {
+                            result[irdbName] = BrandOption(
+                                name = irdbName,
+                                source = CodeSource.IRDB,
+                                displayName = irdbName,
+                                enName = irdbName,
+                            )
+                        }
+                    }
             }
-            // irext 部分：按设备大类取品牌（覆盖同名 irdb 品牌）
-            type.irextCategoryId()?.let { categoryId ->
-                indexLoader.getBrands(categoryId).forEach { brand ->
-                    result[brand.name] = BrandOption(brand.name, CodeSource.IREXT, brand.id)
-                }
-            }
-            _brands.value = result.values.sortedBy { it.name }
+            _brands.value = result.values.sortedBy { it.displayName }
         }
     }
 
@@ -327,8 +360,16 @@ class AddDeviceViewModel(
                 } else {
                     indexLoader.getRemotes(brandId)
                 }
-                remotes.forEach { remote ->
-                    result[remote.bin] = CodeOption(remote.name, CodeSource.IREXT, remote.bin, remote.name)
+                remotes.forEachIndexed { index, remote ->
+                    // FIX-6：IREXT 内部编码名（upd6121g_remote_fan_11367）不直接展示，
+                    // UI 显示"型号 N"，codeRef 保留 bin 原值用于解析
+                    result[remote.bin] = CodeOption(
+                        name = remote.name,
+                        source = CodeSource.IREXT,
+                        codeRef = remote.bin,
+                        model = remote.name,
+                        displayName = "型号 ${index + 1}",
+                    )
                 }
             }
             _models.value = result.values.sortedBy { it.name }
@@ -375,7 +416,8 @@ class AddDeviceViewModel(
             isSaving.value = true
             try {
                 val device = Device(
-                    name = deviceName.value.trim().ifBlank { type.label },
+                    // FIX-5：留空时默认设备名用品牌中文名（如"先锋"），无中文用 displayName
+                    name = deviceName.value.trim().ifBlank { brandLabelName(brand) },
                     type = type,
                     brand = brand.name,
                     region = selectedProvince.value,
@@ -406,7 +448,7 @@ class AddDeviceViewModel(
         val code = selectedCode.value ?: return null
         return Device(
             id = 0L,
-            name = deviceName.value.trim().ifBlank { type.label },
+            name = deviceName.value.trim().ifBlank { brandLabelName(brand) },
             type = type,
             brand = brand.name,
             region = selectedProvince.value,
@@ -533,6 +575,10 @@ data class BrandOption(
     val name: String,
     val source: CodeSource,
     val irextBrandId: Int? = null,
+    /** UI 显示名（FIX-4）：IREXT 中英并显（如"先锋 Pioneer"）；irdb 未合并品牌为英文名 */
+    val displayName: String = name,
+    /** 英文名（FIX-4 跨源去重/副显用；IREXT 来自索引 nameEn，irdb 即其品牌名） */
+    val enName: String? = null,
 )
 
 /** 向导候选模型：型号/码组（IREXT=bin 文件；IRDB=品牌/类型/型号 CSV 路径） */
@@ -541,6 +587,8 @@ data class CodeOption(
     val source: CodeSource,
     val codeRef: String,
     val model: String? = null,
+    /** UI 显示名（FIX-6）：IREXT 型号为"型号 N"，irdb 为 CSV 型号名；codeRef 保留原值用于解析 */
+    val displayName: String = name,
 )
 
 /**
@@ -560,6 +608,26 @@ sealed interface LocatingState {
     /** 定位失败 / 权限被拒 / 省份未匹配（展示 reason 并引导手动选择） */
     data class Failed(val reason: String) : LocatingState
 }
+
+// ---------- FIX-3 / FIX-4 / FIX-5 辅助函数 ----------
+
+/** FIX-3：品牌是否有可用码组（直挂 remotes 或 STB 地区链路的运营商 remotes） */
+private fun IrextBrand.hasUsableRemotes(): Boolean =
+    remotes.isNotEmpty() ||
+        areas.any { area -> area.cities.any { city -> city.operators.any { op -> op.remotes.isNotEmpty() } } }
+
+/** FIX-4：IREXT 品牌显示名——中英并显（"先锋 Pioneer"）；纯英文品牌（如 TCL）不重复 */
+private fun irextDisplayName(brand: IrextBrand): String {
+    val en = brand.nameEn.trim()
+    return if (en.isNotEmpty() && !en.equals(brand.name.trim(), ignoreCase = true)) "${brand.name} ${en}" else brand.name
+}
+
+/** 是否含中文（用于品牌中文名提取 / 同名冲突取舍中文条目） */
+private fun hasCjk(text: String): Boolean = text.any { it in '\u4e00'..'\u9fff' }
+
+/** FIX-5：品牌默认名——优先中文名，无中文（irdb 英文品牌）用 displayName 全称 */
+private fun brandLabelName(brand: BrandOption): String =
+    if (hasCjk(brand.name)) brand.name else brand.displayName
 
 /** 设备类型 → IREXT 设备大类 id（OTHER 无对应大类） */
 private fun DeviceType.irextCategoryId(): Int? = when (this) {
