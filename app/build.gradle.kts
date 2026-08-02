@@ -1,4 +1,6 @@
 // app 模块构建配置（计划 §6.4）
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -19,11 +21,40 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    // release 签名配置：密钥材料一律放在项目外 D:\Android\keystore\（keystore.properties + .jks），
+    // 绝不进入项目目录 / git。使用绝对路径，避免并行 worker 目录混淆。
+    signingConfigs {
+        create("release") {
+            val propsFile = file("D:/Android/keystore/keystore.properties")
+            if (propsFile.exists()) {
+                val props = Properties().apply { propsFile.inputStream().use { load(it) } }
+                if (props.isNotEmpty()) {
+                    storeFile = file(props.getProperty("storeFile"))
+                    storePassword = props.getProperty("storePassword")
+                    keyAlias = props.getProperty("keyAlias")
+                    keyPassword = props.getProperty("keyPassword")
+                }
+                // 显式启用 v2/v3 签名：v1（JAR 签名）在 minSdk>=24 时被 AGP 8.x 忽略
+                // （minSdk 24 起所有设备均支持 v2，v1 属遗留弱方案，无需开启）
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // keystore 就绪 → release 签名；否则回退 debug 签名并告警（仅供本地调试，禁止分发）
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile?.exists() == true) {
+                signingConfig = releaseSigning
+            } else {
+                logger.warn("release keystore 缺失（${releaseSigning.storeFile}），release 包将使用 debug 签名，不可用于正式分发！")
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {
