@@ -18,13 +18,16 @@ import androidx.navigation.navArgument
 import com.photon.remote.data.model.DeviceType
 import com.photon.remote.ui.ac.AcPanelScreen
 import com.photon.remote.ui.adddevice.AddDeviceScreen
+import com.photon.remote.ui.finder.IrFinderScreen
 import com.photon.remote.ui.home.HomeScreen
+import com.photon.remote.ui.importexport.ImportExportScreen
 import com.photon.remote.ui.macro.MacroEditScreen
 import com.photon.remote.ui.macro.MacroListScreen
 import com.photon.remote.ui.remote.RemoteScreen
+import com.photon.remote.ui.settings.SettingsScreen
 
 /**
- * 自适应导航（计划 §5.2 / Todo 26-31）。
+ * 自适应导航（计划 §5.2 / Todo 26-31 + 34-36）。
  *
  * 路由表：
  *   home                   首页设备列表
@@ -33,8 +36,11 @@ import com.photon.remote.ui.remote.RemoteScreen
  *   acpanel/{deviceId}     空调面板（deviceId = LongType）
  *   macro                  宏列表
  *   macroEdit/{id?}        宏编辑（id 缺省 = 新建，LongType 可选参数）
+ *   importExport           导入导出（Flipper .ir / LIRC .conf / JSON 备份）
+ *   finder                 暴力找码
+ *   settings               设置（主题/强调色/发射路径/关于）
  *
- * 后续 UI worker 接入的路由（占位注释）：importExport / finder / settings。
+ * 后续 UI worker 接入的路由（占位注释）：Todo 37-39（平板双栏 / 收藏增强 / 桌面快捷方式）。
  * NavigationSuiteScaffold 按窗口宽度自动切换：Compact/Medium = 底部导航栏，
  * Expanded（平板横屏）= 左侧 NavigationRail；底部导航项随对应页面一并接入。
  */
@@ -125,8 +131,22 @@ fun PhotonNavHost() {
                 )
             }
 
-            // TODO(后续 UI worker 接入)：importExport（导入导出）/
-            // finder（暴力找码）/ settings（设置）路由，由对应页面 worker 追加
+            // 导入导出：Flipper .ir / LIRC .conf / JSON 备份（Todo 34）
+            composable("importExport") {
+                ImportExportScreen()
+            }
+
+            // 暴力找码：协议 + 前缀迭代发码（Todo 35）
+            composable("finder") {
+                IrFinderScreen()
+            }
+
+            // 设置：主题/强调色/发射路径/音频/关于（Todo 36）
+            composable("settings") {
+                SettingsScreen()
+            }
+
+            // TODO(后续 UI worker 接入)：Todo 37-39（平板双栏 / 收藏增强 / 桌面快捷方式）
         }
     }
 }

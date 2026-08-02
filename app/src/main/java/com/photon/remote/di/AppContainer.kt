@@ -23,7 +23,10 @@ import com.photon.remote.ir.transmitter.ConsumerIrTransmitter
 import com.photon.remote.ir.transmitter.IrDispatcher
 import com.photon.remote.ir.transmitter.TransmitterManager
 import com.photon.remote.ir.transmitter.UsbIrTransmitter
+import com.photon.remote.viewmodel.FinderViewModel
+import com.photon.remote.viewmodel.ImportExportViewModel
 import com.photon.remote.viewmodel.MacroViewModel
+import com.photon.remote.viewmodel.SettingsViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -130,6 +133,53 @@ class AppContainer(context: Context) {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 if (modelClass.isAssignableFrom(MacroViewModel::class.java)) {
                     return MacroViewModel(appContext as Application) as T
+                }
+                throw IllegalArgumentException("未知 ViewModel 类型：${modelClass.name}")
+            }
+        }
+    }
+
+    // ---------- 页面 ViewModel 工厂（Todo 34-36 导入导出/找码/设置追加） ----------
+
+    /**
+     * 导入导出页 ViewModel 工厂（懒加载）。
+     *
+     * ImportExportViewModel 为 AndroidViewModel：依赖从容器统一获取
+     * （getApplication<PhotonApplication>().container），页面经
+     * `viewModel(factory = app.container.importExportViewModelFactory)` 使用。
+     */
+    val importExportViewModelFactory: ViewModelProvider.Factory by lazy {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                if (modelClass.isAssignableFrom(ImportExportViewModel::class.java)) {
+                    return ImportExportViewModel(appContext as Application) as T
+                }
+                throw IllegalArgumentException("未知 ViewModel 类型：${modelClass.name}")
+            }
+        }
+    }
+
+    /** 暴力找码页 ViewModel 工厂（懒加载，见 importExportViewModelFactory 说明） */
+    val finderViewModelFactory: ViewModelProvider.Factory by lazy {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                if (modelClass.isAssignableFrom(FinderViewModel::class.java)) {
+                    return FinderViewModel(appContext as Application) as T
+                }
+                throw IllegalArgumentException("未知 ViewModel 类型：${modelClass.name}")
+            }
+        }
+    }
+
+    /** 设置页 ViewModel 工厂（懒加载，见 importExportViewModelFactory 说明） */
+    val settingsViewModelFactory: ViewModelProvider.Factory by lazy {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
+                    return SettingsViewModel(appContext as Application) as T
                 }
                 throw IllegalArgumentException("未知 ViewModel 类型：${modelClass.name}")
             }
