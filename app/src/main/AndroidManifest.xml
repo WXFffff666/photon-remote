@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 定位功能（Todo 49：使用定位自动匹配所在省市；FINE 优先，COARSE 网络兜底） -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- ConsumerIrManager 无需权限；此查询声明用于 Play 过滤（可选） -->
     <uses-feature android:name="android.hardware.consumerir" android:required="false" />
     <!-- USB 红外外设路径（核心发射路径之一，见 D8/Todo 11） -->

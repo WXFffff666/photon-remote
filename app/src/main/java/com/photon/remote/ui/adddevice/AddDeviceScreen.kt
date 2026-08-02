@@ -63,6 +63,7 @@ fun AddDeviceScreen(
             codeResolver = app.container.codeResolver,
             dispatcher = app.container.irDispatcher,
             transmitter = app.container.transmitterManager,
+            locationResolver = app.container.locationResolver,
         )
     }
     val currentPage by viewModel.currentPage.collectAsState()

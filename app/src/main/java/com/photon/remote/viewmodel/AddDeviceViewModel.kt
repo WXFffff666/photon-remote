@@ -8,6 +8,8 @@ import com.photon.remote.codebase.IrdbCsvParser
 import com.photon.remote.codebase.IrextIndexLoader
 import com.photon.remote.codebase.IrextOperator
 import com.photon.remote.codebase.IrextRemote
+import com.photon.remote.codebase.location.AreaNameMatcher
+import com.photon.remote.codebase.location.LocationResolver
 import com.photon.remote.data.local.entity.Device
 import com.photon.remote.data.local.entity.RemoteButton
 import com.photon.remote.data.model.ButtonAction
@@ -43,6 +45,7 @@ class AddDeviceViewModel(
     private val codeResolver: CodeResolver,
     private val dispatcher: IrDispatcher,
     private val transmitter: TransmitterManager,
+    private val locationResolver: LocationResolver,
 ) : ViewModel() {
 
     // ---------- 步骤状态 ----------
@@ -82,6 +85,10 @@ class AddDeviceViewModel(
 
     /** 当前品牌是否有 IREXT 地区数据（无则跳过地区页） */
     val brandHasAreas = MutableStateFlow(false)
+
+    /** 定位状态（Todo 49：使用定位自动匹配省市） */
+    private val _locatingState = MutableStateFlow<LocatingState>(LocatingState.Idle)
+    val locatingState: StateFlow<LocatingState> = _locatingState.asStateFlow()
 
     /** 品牌候选（按类型加载） */
     private val _brands = MutableStateFlow<List<BrandOption>>(emptyList())
@@ -167,6 +174,56 @@ class AddDeviceViewModel(
         selectedOperator.value = operator
         selectedCode.value = null
         loadModels()
+    }
+
+    // ---------- 定位（Todo 49：使用定位自动匹配省市） ----------
+
+    /**
+     * 定位当前位置并自动匹配 IREXT 省市（权限已由 UI 层处理）。
+     *
+     * 流程：LocationResolver.resolveProvinceCity() → 匹配 irext areas/cities → 预填
+     * selectedProvince/selectedCity → 联动加载运营商列表（用户继续手动细分选运营商，
+     * 或手动改选省市）。任一步失败降级为 [LocatingState.Failed]，UI 提示手动选择，
+     * 不抛异常；成功（含仅省匹配）为 [LocatingState.Found]。
+     */
+    fun locateProvinceCity() {
+        val brandId = selectedBrand.value?.irextBrandId ?: return
+        if (_locatingState.value == LocatingState.Locating) return
+        viewModelScope.launch {
+            _locatingState.value = LocatingState.Locating
+            val result = locationResolver.resolveProvinceCity()
+            if (result == null) {
+                _locatingState.value = LocatingState.Failed("定位失败（无定位或定位服务关闭），请手动选择")
+                return@launch
+            }
+            val (provinceRaw, cityRaw) = result
+            val areas = indexLoader.getAreas(brandId).map { it.name }
+            val province = AreaNameMatcher.matchArea(areas, provinceRaw)
+            if (province == null) {
+                _locatingState.value = LocatingState.Failed("未能匹配到所在省份（$provinceRaw），请手动选择")
+                return@launch
+            }
+            // 选中省 + 联动城市列表（与 selectProvince 语义一致）
+            selectedProvince.value = province
+            selectedCity.value = null
+            selectedOperator.value = null
+            selectedCode.value = null
+            val cityList = indexLoader.getCities(brandId, province).map { it.name }
+            _cities.value = cityList
+            // 匹配市：先按定位市名，再按省名兜底（直辖市 irext 城市节点与省同名，如"北京市"）
+            val city = AreaNameMatcher.matchCity(cityList, cityRaw)
+                ?: AreaNameMatcher.matchCity(cityList, provinceRaw)
+            if (city != null) {
+                selectedCity.value = city
+                _operators.value = indexLoader.getOperators(brandId, province, city)
+            }
+            _locatingState.value = LocatingState.Found(province, city)
+        }
+    }
+
+    /** 定位权限被拒（UI 层回调）→ 提示手动选择 */
+    fun locatePermissionDenied() {
+        _locatingState.value = LocatingState.Failed("定位权限被拒绝，请手动选择")
     }
 
     /** 选择型号/码组（翻页由底部"下一步"控制） */
@@ -471,6 +528,24 @@ data class CodeOption(
     val codeRef: String,
     val model: String? = null,
 )
+
+/**
+ * 定位状态（Todo 49）：Idle=未定位 / Locating=定位中 / Found=已定位(省,市，市可能为 null) /
+ * Failed=失败原因（UI 提示手动选择）。
+ */
+sealed interface LocatingState {
+    /** 未发起定位 */
+    data object Idle : LocatingState
+
+    /** 定位中（按钮转圈 + 禁用） */
+    data object Locating : LocatingState
+
+    /** 已定位成功（city=null 表示省已匹配但市未匹配，仍可手动选市） */
+    data class Found(val province: String?, val city: String?) : LocatingState
+
+    /** 定位失败 / 权限被拒 / 省份未匹配（展示 reason 并引导手动选择） */
+    data class Failed(val reason: String) : LocatingState
+}
 
 /** 设备类型 → IREXT 设备大类 id（OTHER 无对应大类） */
 private fun DeviceType.irextCategoryId(): Int? = when (this) {

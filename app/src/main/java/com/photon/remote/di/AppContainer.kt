@@ -9,6 +9,7 @@ import com.photon.remote.codebase.CodeResolver
 import com.photon.remote.codebase.IrdbCsvParser
 import com.photon.remote.codebase.IrextBinaryStore
 import com.photon.remote.codebase.IrextIndexLoader
+import com.photon.remote.codebase.location.LocationResolver
 import com.photon.remote.data.local.AppDatabase
 import com.photon.remote.data.local.SettingsStore
 import com.photon.remote.data.local.settingsStore
@@ -64,6 +65,9 @@ class AppContainer(context: Context) {
 
     /** irdb CSV 码库解析器 */
     val irdbParser: IrdbCsvParser = IrdbCsvParser(context)
+
+    /** 定位解析器（Todo 49：LocationManager + Geocoder，原生 API，不引入 Play Services） */
+    val locationResolver: LocationResolver = LocationResolver(appContext)
 
     /** 应用级 AC 状态内存缓存（启动自 SettingsStore 水合、变更回写） */
     val acStatusCache: ACStatusCache = ACStatusCache(settingsStore, scope)
