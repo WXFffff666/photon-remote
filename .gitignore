@@ -123,7 +123,7 @@ temp/
 # =========================
 # Android / Gradle 工程
 # =========================
-local.properties          # 本机 SDK 路径，不入库
+local.properties
 *.iml
 .gradle/
 .kotlin/
