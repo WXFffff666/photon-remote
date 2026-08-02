@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用图标前景：红外发射符号（中心 LED 光点 + 两层信号环），居中于 108dp 画布的安全区内 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 中心发射点（光子 LED） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,54 m-8,0 a8,8 0 1,1 16,0 a8,8 0 1,1 -16,0" />
+
+    <!-- 内层信号环 -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.5"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 m-16,0 a16,16 0 1,1 32,0 a16,16 0 1,1 -32,0" />
+
+    <!-- 外层信号环（半透明，营造扩散感） -->
+    <path
+        android:strokeColor="#B3FFFFFF"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 m-26,0 a26,26 0 1,1 52,0 a26,26 0 1,1 -52,0" />
+</vector>

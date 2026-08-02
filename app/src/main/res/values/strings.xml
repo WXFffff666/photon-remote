@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用名（中文界面，D1） -->
+    <string name="app_name">光子遥控</string>
+
+    <!-- 第一步测试屏（计划 §6.6） -->
+    <string name="ir_has_emitter">✅ 检测到红外发射器</string>
+    <string name="ir_no_emitter">❌ 本机无红外发射器</string>
+    <string name="ir_carrier_range">支持的载波范围: %1$d - %2$d Hz</string>
+    <string name="send_nec_test">发送 NEC 测试码 0x00FF12ED</string>
+    <string name="send_ok">已发送 NEC 测试码</string>
+    <string name="send_fail">发送失败</string>
+    <string name="send_hint">提示：对着电视/机顶盒的接收窗发送，观察是否响应。\n此码为通用测试码，不保证所有设备响应；链路正确时按钮有震动反馈。</string>
+</resources>

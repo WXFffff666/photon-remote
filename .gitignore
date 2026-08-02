@@ -1,0 +1,138 @@
+# =========================
+# Cursor / MCP（可能含 Token）
+# =========================
+.cursor/
+mcp.json
+!.cursor/rules/
+!.cursor/rules/**
+
+# =========================
+# 环境变量与密钥文件
+# =========================
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+*.env
+*.env.local
+*.env.development
+*.env.production
+*.env.test
+
+# 常见密钥/凭证文件名
+secrets.json
+secrets.yaml
+secrets.yml
+secrets.toml
+credentials.json
+credentials.yaml
+credentials.yml
+*.credentials
+*.secret
+*.secrets
+apikey
+apikeys
+*.apikey
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.gpg
+*.asc
+
+# 云服务与第三方平台凭证
+.aws/
+.gcp/
+.azure/
+config/credentials
+service-account*.json
+*-service-account.json
+firebase-adminsdk*.json
+google-services.json
+GoogleService-Info.plist
+
+# =========================
+# 本地配置（可能含密钥）
+# =========================
+config.local.*
+settings.local.*
+*.local.json
+*.local.yaml
+*.local.yml
+*.local.toml
+local.config.*
+appsettings.Development.json
+appsettings.Local.json
+
+# =========================
+# 编辑器与系统文件
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# =========================
+# 依赖与构建产物
+# =========================
+node_modules/
+dist/
+build/
+out/
+target/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# 临时与缓存
+# =========================
+.cache/
+.tmp/
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+
+# =========================
+# Android / Gradle 工程
+# =========================
+local.properties          # 本机 SDK 路径，不入库
+*.iml
+.gradle/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# =========================
+# 工作区状态（计划与任务状态不入库）
+# =========================
+.omo/
+.playwright-mcp/

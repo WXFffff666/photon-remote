@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用级主题（计划 §6.5 引用 @style/Theme.PhotonRemote）。
+         界面渲染全部由 Compose 接管，此主题仅用于启动窗口等系统层面；
+         使用系统 Material.Light.NoActionBar 作父主题，避免引入额外 XML 依赖。 -->
+    <style name="Theme.PhotonRemote" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

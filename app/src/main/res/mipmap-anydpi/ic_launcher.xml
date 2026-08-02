@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 图标矢量回退（API 24/25，不支持的 adaptive-icon）：
+     圆角深空蓝底 + 红外发射前景，保证旧版本桌面图标可显示 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 圆角背景（圆角半径 16） -->
+    <path
+        android:fillColor="#0D1B2A"
+        android:pathData="M28,12 h52 a16,16 0 0 1 16,16 v52 a16,16 0 0 1 -16,16 h-52 a16,16 0 0 1 -16,-16 v-52 a16,16 0 0 1 16,-16 z" />
+
+    <!-- 中心发射点（光子 LED） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,54 m-8,0 a8,8 0 1,1 16,0 a8,8 0 1,1 -16,0" />
+
+    <!-- 内层信号环 -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.5"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 m-16,0 a16,16 0 1,1 32,0 a16,16 0 1,1 -32,0" />
+
+    <!-- 外层信号环 -->
+    <path
+        android:strokeColor="#B3FFFFFF"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 m-26,0 a26,26 0 1,1 52,0 a26,26 0 1,1 -52,0" />
+</vector>
