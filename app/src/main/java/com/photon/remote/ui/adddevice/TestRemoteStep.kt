@@ -52,8 +52,8 @@ fun TestRemoteStep(viewModel: AddDeviceViewModel) {
     val snackbarHostState = SnackbarHostState()
 
     // 测试按键（按当前选中的码组构建，不入库）
-    val powerButton = remember(viewModel.selectedCode.value?.codeRef) { viewModel.testButton("POWER") }
-    val volUpButton = remember(viewModel.selectedCode.value?.codeRef) { viewModel.testButton("VOL_UP") }
+    val powerButton = remember(selectedCode?.codeRef) { viewModel.testButton("POWER") }
+    val volUpButton = remember(selectedCode?.codeRef) { viewModel.testButton("VOL_UP") }
 
     // FIX-5：命名输入框预填品牌中文名（无则类型名）——进入测试页且用户未输入时生效
     val defaultName = selectedBrand?.let { brand ->
@@ -65,8 +65,8 @@ fun TestRemoteStep(viewModel: AddDeviceViewModel) {
         testResult?.let { snackbarHostState.showSnackbar(it) }
     }
     // 预填默认设备名（仅当用户尚未输入时）
-    LaunchedEffect(Unit) {
-        if (viewModel.deviceName.value.isBlank()) defaultName?.let(viewModel::setDeviceName)
+    LaunchedEffect(deviceName, defaultName) {
+        if (deviceName.isBlank()) defaultName?.let(viewModel::setDeviceName)
     }
 
     Column(
