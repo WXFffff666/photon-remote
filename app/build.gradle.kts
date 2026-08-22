@@ -131,5 +131,5 @@ dependencies {
     testImplementation(libs.mockito.core)
     // Room in-memory 单测（Robolectric 提供 Android 框架环境）
     testImplementation("org.robolectric:robolectric:4.14.1")
-    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test:core:1.7.0")
 }
