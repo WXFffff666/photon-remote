@@ -4,6 +4,8 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import com.photon.remote.ir.core.IRPattern
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 
 /**
  * 音频转红外发射器（计划 §3.4）——无红外手机也能用的关键路径（USB/音频适配器演示）。
@@ -26,15 +28,42 @@ class AudioIrTransmitter(
     @Volatile
     var stereoMode: Boolean = stereo
 
-    /** 音频路径始终可用（任何手机都有音频输出；需要适配器 + 最大音量，见类注释） */
-    override val isAvailable: Boolean = true
+    /** 真实探测：尝试创建 AudioTrack 并检查 STATE_INITIALIZED，否则 false（无音频能力/采样率不支持时为 false） */
+    override val isAvailable: Boolean
+        get() = runCatching {
+            val rate = 96_000
+            val mask = AudioFormat.CHANNEL_OUT_MONO
+            val minBuf = AudioTrack.getMinBufferSize(rate, mask, AudioFormat.ENCODING_PCM_16BIT)
+            if (minBuf <= 0 || minBuf == AudioTrack.ERROR || minBuf == AudioTrack.ERROR_BAD_VALUE) return@runCatching false
+            val format = AudioFormat.Builder()
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setSampleRate(rate)
+                .setChannelMask(mask)
+                .build()
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAudioFormat(format)
+                .setBufferSizeInBytes(minBuf)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            try {
+                track.state == AudioTrack.STATE_INITIALIZED
+            } finally {
+                track.release()
+            }
+        }.getOrDefault(false)
 
     /** 探测可用采样率：192kHz 优先，不支持则回退 96kHz（结果缓存） */
     private val supportedSampleRate: Int by lazy { probe(192_000) ?: probe(96_000) ?: 96_000 }
 
     /**
      * 同步发送：合成 PCM → AudioTrack 播放至整帧结束。192kHz 失败自动回退 96kHz 重试。
-     * 阻塞直到播放完成（MODE_STATIC 播完自动停止），由 IrDispatcher 后台队列调用。
+     * 由 IrDispatcher 后台队列调用；内部以非阻塞 delay 等待播放完成（不占用 Dispatchers.Default 线程的阻塞等待）。
      */
     override fun transmit(pattern: IRPattern): Boolean {
         val stereo = stereoMode
@@ -42,7 +71,7 @@ class AudioIrTransmitter(
         for (rate in rates) {
             val ok = try {
                 val pcm = AudioPcmBuilder.build(pattern, rate, stereo)
-                playPcm(pcm, rate, stereo)
+                runBlocking { playPcm(pcm, rate, stereo) }
             } catch (e: Exception) {
                 false   // 设备不支持该采样率 / 构建 AudioTrack 失败 → 尝试下一档
             }
@@ -59,8 +88,8 @@ class AudioIrTransmitter(
         null
     }
 
-    /** 创建 AudioTrack（MODE_STATIC）→ 整段写入 → play → 等待播放完成 → release */
-    private fun playPcm(pcm: ShortArray, sampleRate: Int, stereo: Boolean): Boolean {
+    /** 创建 AudioTrack（MODE_STATIC）→ 整段写入 → play → 非阻塞等待播放完成 → release */
+    private suspend fun playPcm(pcm: ShortArray, sampleRate: Int, stereo: Boolean): Boolean {
         val channels = if (stereo) 2 else 1
         val mask = if (stereo) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
         val minBuf = AudioTrack.getMinBufferSize(sampleRate, mask, AudioFormat.ENCODING_PCM_16BIT)
@@ -71,25 +100,29 @@ class AudioIrTransmitter(
             .setSampleRate(sampleRate)
             .setChannelMask(mask)
             .build()
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-            )
-            .setAudioFormat(format)
-            .setBufferSizeInBytes(maxOf(minBuf, pcm.size * 2))
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
+        val track = try {
+            AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAudioFormat(format)
+                .setBufferSizeInBytes(maxOf(minBuf, pcm.size * 2))
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+        } catch (e: Exception) {
+            return false
+        }
         return try {
             if (track.write(pcm, 0, pcm.size) != pcm.size) return false
             track.play()
-            // MODE_STATIC 播完自动停止；轮询等待完成（上限 = 播放时长 + 300ms 余量，防极端调度延迟）
+            // MODE_STATIC 播完自动停止；非阻塞轮询等待完成（协程 delay，不阻塞 IrDispatcher 的 Dispatchers.Default 线程）
             val durationMs = pcm.size * 1000L / sampleRate / channels
             val deadline = System.currentTimeMillis() + durationMs + 300
             while (track.playState != AudioTrack.PLAYSTATE_STOPPED && System.currentTimeMillis() < deadline) {
-                Thread.sleep(2)
+                delay(2)
             }
             true
         } finally {

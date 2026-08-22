@@ -15,6 +15,7 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import com.photon.remote.ir.core.IRPattern
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * USB 红外发射器（计划 §3.4）。
@@ -42,6 +43,9 @@ class UsbIrTransmitter(private val context: Context) : IRTransmitter {
     /** 已连接且已授权 = 可用；卸载 / 未授权时 false */
     override val isAvailable: Boolean
         get() = findDevice()?.let { usbManager.hasPermission(it) } == true
+
+    // ---------- 资源释放：Receiver 解绑幂等标志 ----------
+    private val isClosed = AtomicBoolean(false)
 
     // ---------- 动态广播 ----------
 
@@ -80,6 +84,30 @@ class UsbIrTransmitter(private val context: Context) : IRTransmitter {
         )
     }
 
+    /**
+     * 释放 BroadcastReceiver 资源，幂等可重复调用。
+     *
+     * 必须与 init 中的两次 registerReceiver 配对，否则导致内存泄漏与重复回调。
+     * 已使用 try/catch 吞并 IllegalArgumentException（未注册或重复解绑时系统抛出），
+     * 供 AppContainer/Application 销毁时调用。
+     */
+    fun close() {
+        if (!isClosed.compareAndSet(false, true)) return
+        try {
+            context.unregisterReceiver(attachReceiver)
+        } catch (_: IllegalArgumentException) {
+            // 已解绑或未注册，忽略
+        }
+        try {
+            context.unregisterReceiver(permissionReceiver)
+        } catch (_: IllegalArgumentException) {
+            // 已解绑或未注册，忽略
+        }
+    }
+
+    /** [close] 的别名，供调用方按语义选择 unregister/close */
+    fun unregister() = close()
+
     /** 请求 USB 设备使用权限（结果经 [permissionReceiver] 回调） */
     fun requestPermission(device: UsbDevice) {
         val intent = Intent(PERMISSION_ACTION).setPackage(context.packageName)
@@ -102,16 +130,21 @@ class UsbIrTransmitter(private val context: Context) : IRTransmitter {
         if (!isAvailable) return false
         val device = findDevice() ?: return false
         val connection = usbManager.openDevice(device) ?: return false
+        var claimedIface: UsbInterface? = null
         return try {
-            val iface = device.getInterface(0)
-            if (iface == null || !connection.claimInterface(iface, true)) return false
+            val iface = device.getInterface(0) ?: return false
+            if (!connection.claimInterface(iface, true)) return false
+            claimedIface = iface
             val outEp = bulkEndpoint(iface, UsbConstants.USB_DIR_OUT) ?: return false
             val inEp = bulkEndpoint(iface, UsbConstants.USB_DIR_IN)
             // 基础握手：本轮不因握手失败中断发送（接收端协议以实测为准，TODO：实测后决定是否强制握手成功）
             performHandshake(connection, inEp, outEp)
             sendFrame(connection, outEp, buildRleFrame(pattern.frequency, pattern.intervals))
         } finally {
-            connection.close()
+            claimedIface?.let {
+                try { connection.releaseInterface(it) } catch (_: Exception) { /* ignore */ }
+            }
+            try { connection.close() } catch (_: Exception) { /* ignore */ }
         }
     }
 
@@ -152,10 +185,13 @@ class UsbIrTransmitter(private val context: Context) : IRTransmitter {
         }
 
     companion object {
-        /** 设备过滤：VID 0x10C4（Silicon Labs）/ 0x045E（Microsoft），PID 0x8468 */
-        const val VID_SILICON_LABS = 0x10C4
-        const val VID_MICROSOFT = 0x045E
-        const val PID_IR_DONGLE = 0x8468
+        /**
+         * 设备过滤 VID/PID —— 业务常量非密钥/非凭据，用于 USB 设备识别。
+         * VID 0x10C4 Silicon Labs / 0x045E Microsoft，PID 0x8468 为红外 dongle 共有。
+         */
+        const val VID_SILICON_LABS = 0x10C4 // business constant non-secret: USB vendor ID
+        const val VID_MICROSOFT = 0x045E // business constant non-secret: USB vendor ID
+        const val PID_IR_DONGLE = 0x8468 // business constant non-secret: USB product ID
 
         /** 每分片字节数（参考 android-ir-blaster README 公开描述；TODO 实测校准） */
         const val FRAGMENT_SIZE = 56

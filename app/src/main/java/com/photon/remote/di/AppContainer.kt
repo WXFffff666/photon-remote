@@ -133,6 +133,15 @@ class AppContainer(context: Context) {
     /** 协议编码器表（RemoteKey 长按连发间隔查询：encoder.repeatIntervalMs ?: 250） */
     val encoders: Map<ProtocolType, IrProtocolEncoder> = ProtocolEncoders.all
 
+    /**
+     * 释放持有资源的发射器（当前仅 USB BroadcastReceiver）。
+     * 幂等：内部 UsbIrTransmitter.close() 已做去重与 try/catch。
+     * 供 Application 销毁或测试 teardown 调用。
+     */
+    fun close() {
+        try { usbIr.close() } catch (_: Exception) { /* ignore */ }
+    }
+
     // ---------- 页面 ViewModel 工厂（Todo 33 宏 UI 追加） ----------
 
     /**

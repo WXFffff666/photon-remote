@@ -1,11 +1,14 @@
 package com.photon.remote.ir.transmitter
 
 import com.photon.remote.ir.core.IRPattern
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.completeWith
 import kotlinx.coroutines.launch
 
@@ -48,10 +51,30 @@ class IrDispatcher(
      *
      * block 抛出的异常会原样传播给调用方（via CompletableDeferred），
      * 且不影响队列后续任务（工作协程不会因此死亡）。
+     *
+     * 若 dispatcher 已 [close]，则快速失败抛 [CancellationException]，不挂起。
      */
     suspend fun <T> onQueue(block: suspend () -> T): T {
         val deferred = CompletableDeferred<T>()
-        queue.send { deferred.completeWith(runCatching { block() }) }
+        try {
+            queue.send { deferred.completeWith(runCatching { block() }) }
+        } catch (e: ClosedSendChannelException) {
+            throw CancellationException("IrDispatcher is closed", e)
+        } catch (e: CancellationException) {
+            // scope 已取消或调用方取消时直接透传，不包装
+            throw e
+        }
         return deferred.await()
+    }
+
+    /**
+     * 关闭调度器：取消工作协程并关闭队列。
+     *
+     * ViewModel.onCleared / 测试 tearDown 中调用，重复调用安全。
+     * 关闭后 [send]/[onQueue] 将快速抛 [CancellationException] 而非挂起。
+     */
+    fun close() {
+        scope.cancel()
+        queue.close()
     }
 }
