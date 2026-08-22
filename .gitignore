@@ -139,3 +139,5 @@ captures/
 
 # IREXT 预编译 so（Todo 14 交付物，必须入库）：豁免全局 ignore 的 *.so 规则
 !app/src/main/jniLibs/**/libirdecode.so
+# IREXT 离线码库 zip（测试与离线使用，必须入库）：豁免全局 *.zip
+!app/src/main/assets/irext/irext-binaries.zip
