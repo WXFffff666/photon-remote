@@ -1,4 +1,5 @@
 // app 模块构建配置（计划 §6.4）
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -21,21 +22,36 @@ android {
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    // release 签名配置：密钥材料一律放在项目外 D:\Android\keystore\（keystore.properties + .jks），
-    // 绝不进入项目目录 / git。使用绝对路径，避免并行 worker 目录混淆。
+    // release 签名配置：兼容本地与 CI。
+    // 候选路径优先级：D:/Android/keystore/keystore.properties（本地 Windows 绝对路径，历史兼容）
+    // → $rootDir/keystore.properties → $projectDir/keystore.properties → /tmp/keystore.properties
+    // CI 通过 secrets 注入时会在上述任一路径生成 keystore.properties。
+    // 绝不进入 git（已被 .gitignore 屏蔽）。
     signingConfigs {
         create("release") {
-            val propsFile = file("D:/Android/keystore/keystore.properties")
-            if (propsFile.exists()) {
+            val candidateFiles = listOf(
+                file("D:/Android/keystore/keystore.properties"),
+                file("$rootDir/keystore.properties"),
+                file("$projectDir/keystore.properties"),
+                file("/tmp/keystore.properties"),
+                file("/tmp/keystore/keystore.properties"),
+            )
+            val propsFile = candidateFiles.firstOrNull { it.exists() }
+            if (propsFile != null && propsFile.exists()) {
                 val props = Properties().apply { propsFile.inputStream().use { load(it) } }
                 if (props.isNotEmpty()) {
-                    storeFile = file(props.getProperty("storeFile"))
+                    // storeFile 可能是绝对路径或相对路径；相对路径以 propsFile 所在目录为基准
+                    val rawStore = props.getProperty("storeFile")?.trim().orEmpty()
+                    storeFile = if (rawStore.isNotEmpty()) {
+                        val f = file(rawStore)
+                        if (f.isAbsolute) f else File(propsFile.parentFile, rawStore)
+                    } else null
                     storePassword = props.getProperty("storePassword")
                     keyAlias = props.getProperty("keyAlias")
                     keyPassword = props.getProperty("keyPassword")
                 }
                 // 显式启用 v2/v3 签名：v1（JAR 签名）在 minSdk>=24 时被 AGP 8.x 忽略
-                // （minSdk 24 起所有设备均支持 v2，v1 属遗留弱方案，无需开启）
+                // （minSdk 24 起所有设备均支持 v2，v1 属遗留弱方案，但为兼容旧设备仍开启）
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true

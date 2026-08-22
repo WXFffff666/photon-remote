@@ -24,9 +24,19 @@ echo [smoke] JAVA_HOME=%JAVA_HOME%
 echo [smoke] ANDROID_HOME=%ANDROID_HOME%
 echo [smoke] project root=%PROJECT_ROOT%
 
-REM ---------- 1/3 debug build ----------
+REM ---------- 1/4 lint ----------
 echo.
-echo [smoke] == [1/3] assembleDebug ==
+echo [smoke] == [1/4] lintDebug ==
+call "%GRADLEW%" :app:lintDebug
+if errorlevel 1 (
+    echo [smoke] [FAIL] lintDebug failed, report: app\build\reports\lint-results-debug.html
+    exit /b 1
+)
+echo [smoke] [PASS] lintDebug
+
+REM ---------- 2/4 debug build ----------
+echo.
+echo [smoke] == [2/4] assembleDebug ==
 call "%GRADLEW%" :app:assembleDebug
 if errorlevel 1 (
     echo [smoke] [FAIL] assembleDebug failed, see log above.
@@ -34,9 +44,9 @@ if errorlevel 1 (
 )
 echo [smoke] [PASS] assembleDebug
 
-REM ---------- 2/3 unit tests ----------
+REM ---------- 3/4 unit tests ----------
 echo.
-echo [smoke] == [2/3] testDebugUnitTest ==
+echo [smoke] == [3/4] testDebugUnitTest ==
 call "%GRADLEW%" :app:testDebugUnitTest
 if errorlevel 1 (
     echo [smoke] [FAIL] testDebugUnitTest has failures, report: app\build\reports\tests\testDebugUnitTest\index.html
@@ -44,9 +54,19 @@ if errorlevel 1 (
 )
 echo [smoke] [PASS] testDebugUnitTest
 
-REM ---------- 3/3 summary ----------
+REM ---------- 4/4 release build (unsigned fallback if no keystore) ----------
+echo.
+echo [smoke] == [4/4] assembleRelease ==
+call "%GRADLEW%" :app:assembleRelease
+if errorlevel 1 (
+    echo [smoke] [FAIL] assembleRelease failed, see log above.
+    exit /b 1
+)
+echo [smoke] [PASS] assembleRelease
+
+REM ---------- summary ----------
 echo.
 echo ============================================================
-echo [smoke] ALL PASSED: assembleDebug + testDebugUnitTest
+echo [smoke] ALL PASSED: lintDebug + assembleDebug + testDebugUnitTest + assembleRelease
 echo ============================================================
 exit /b 0

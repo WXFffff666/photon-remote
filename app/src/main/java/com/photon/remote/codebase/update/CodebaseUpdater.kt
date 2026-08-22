@@ -201,6 +201,10 @@ class CodebaseUpdater(
                     val rel = entry.name.removePrefix("/")
                     if (rel.contains("..")) throw IllegalStateException("数据包含非法路径，已拒绝")
                     val out = File(stage, rel)
+                    // 增强 ZipSlip 防护：校验 canonicalPath 必须落在 stage 内
+                    if (!out.canonicalFile.path.startsWith(stage.canonicalFile.path + File.separator)) {
+                        throw IllegalStateException("数据包含非法路径（ZipSlip），已拒绝: $rel")
+                    }
                     out.parentFile?.mkdirs()
                     out.outputStream().use { zip.copyTo(it) }
                 }

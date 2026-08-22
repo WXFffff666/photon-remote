@@ -8,6 +8,8 @@
 [![Android](https://img.shields.io/badge/Android-7.0%2B-brightgreen.svg)](app/build.gradle.kts)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-purple.svg)](gradle/libs.versions.toml)
 [![Compose](https://img.shields.io/badge/UI-Compose%20M3-blue.svg)](gradle/libs.versions.toml)
+[![CI](https://github.com/WXFffff666/photon-remote/actions/workflows/ci.yml/badge.svg)](https://github.com/WXFffff666/photon-remote/actions/workflows/ci.yml)
+[![Release](https://github.com/WXFffff666/photon-remote/actions/workflows/release.yml/badge.svg)](https://github.com/WXFffff666/photon-remote/actions/workflows/release.yml)
 
 </div>
 
@@ -185,7 +187,15 @@ gradlew.bat testDebugUnitTest
 tools\smoke.bat
 ```
 
+### CI/CD（提交即构建，tag 即发布）
+
+- **CI**：`push → master` 与 `pull_request → master` 自动触发 `.github/workflows/ci.yml`，执行 `lintDebug + testDebugUnitTest + assembleDebug + assembleRelease`，上传 `PhotonRemote-*.apk` 与测试/Lint 报告（见 `docs/ci-cd.md`）。
+- **Release**：`git tag v*.*.* && git push origin v*.*.*` 触发 `.github/workflows/release.yml`，校验 `tag == v<versionName>`，签名后创建 GitHub Release 并上传双 APK（签名配置见 `docs/ci-signing.md`）。
+- **依赖更新**：`.github/dependabot.yml` 每周一自动提 Gradle 与 GitHub Actions 更新 PR。
+
 ---
+
+
 
 ## 架构简述
 

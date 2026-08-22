@@ -52,7 +52,8 @@ class IrextBinaryStore(
     /** 按需解压后的内存缓存：访问序 LinkedHashMap（LRU），容量上限见 [MAX_CACHE_ENTRIES] */
     private val byteCache = LinkedHashMap<String, ByteArray>(16, 0.75f, true)
 
-    /** zip 根目录前缀（首次读取时发现，如 "irext-binaries_20260519/"） */
+    /** zip 根目录前缀（首次读取时发现，如 "irext-binaries_20260519/"），跨线程可见 */
+    @Volatile
     private var rootPrefix: String? = null
 
     /**
@@ -102,18 +103,23 @@ class IrextBinaryStore(
         return findEntry(assets) { name -> name.substringAfterLast('/') == ref }
     }
 
-    /** 发现 zip 根目录前缀（取第一个 entry 的目录段），结果缓存 */
+    /** 发现 zip 根目录前缀（取第一个 entry 的目录段），结果缓存（加锁防并发重复解压） */
     private fun discoverRootPrefix(assets: AssetManager): String? {
-        val prefix = try {
-            ZipInputStream(assets.open(ZIP_ASSET)).use { zip ->
-                val first = zip.nextEntry ?: return null
-                first.name.substringBefore('/').takeIf { it.isNotEmpty() }?.let { "$it/" }
+        // 双检：已缓存直接返回，避免重复加锁解压
+        rootPrefix?.let { return it }
+        synchronized(lock) {
+            rootPrefix?.let { return it }
+            val prefix = try {
+                ZipInputStream(assets.open(ZIP_ASSET)).use { zip ->
+                    val first = zip.nextEntry ?: return null
+                    first.name.substringBefore('/').takeIf { it.isNotEmpty() }?.let { "$it/" }
+                }
+            } catch (e: Exception) {
+                null   // assets 缺失/损坏：返回 null，load 走全量扫描后同样失败
             }
-        } catch (e: Exception) {
-            null   // assets 缺失/损坏：返回 null，load 走全量扫描后同样失败
+            rootPrefix = prefix
+            return prefix
         }
-        rootPrefix = prefix
-        return prefix
     }
 
     /** 遍历 zip 条目，命中 [match] 即读出全部字节；无命中/异常返回 null */

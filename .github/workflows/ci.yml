@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platforms
+        run: |
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          sdkmanager --list_installed
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          cache-read-only: false
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Lint (Debug)
+        run: ./gradlew :app:lintDebug --stacktrace
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Assemble Debug
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Assemble Release (unsigned fallback)
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Verify APK naming
+        run: |
+          echo "=== APK outputs ==="
+          ls -lh app/build/outputs/apk/debug/ || true
+          ls -lh app/build/outputs/apk/release/ || true
+          test -f app/build/outputs/apk/debug/PhotonRemote-debug-v*.apk || (echo "DEBUG APK missing with expected name" && ls -R app/build/outputs/apk/ && exit 1)
+          test -f app/build/outputs/apk/release/PhotonRemote-release-v*.apk || (echo "RELEASE APK missing with expected name" && ls -R app/build/outputs/apk/ && exit 1)
+          echo "APK naming OK"
+
+      - name: Upload APKs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/debug/PhotonRemote-*.apk
+            app/build/outputs/apk/release/PhotonRemote-*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ github.sha }}
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-*.html
+            app/build/test-results/
+          if-no-files-found: warn
+          retention-days: 14
