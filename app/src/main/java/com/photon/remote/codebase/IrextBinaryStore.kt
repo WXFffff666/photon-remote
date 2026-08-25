@@ -1,12 +1,13 @@
 package com.photon.remote.codebase
 
 import android.content.Context
-import android.content.res.AssetManager
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.irext.decode.sdk.utils.Constants
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.util.zip.ZipInputStream
 
 /**
@@ -30,8 +31,10 @@ data class IrextBinaryRef(
  * IREXT 二进制码库按需读取（计划 §4.3 / Todo 19，Todo 50 追加缓存优先）。
  *
  * 数据源优先级：**filesDir 缓存目录（filesDir/codedb/binaries/）> 内置 assets zip**
- * （assets/irext/irext-binaries.zip，官方 1.76MB、5126 个 .bin，根目录
- * irext-binaries_<version>/）。缓存由 CodebaseUpdater 更新时写入并校验；
+ * （assets/irext/irext-binaries.zip，根目录 irext-binaries_<version>/）。
+ * 内置 zip 为**可选资产（下载优先）**：缺失或损坏时仅告警一次并返回 null，
+ * 由上层引导走 CodebaseUpdater 在线下载路径，绝不崩溃。缓存由 CodebaseUpdater
+ * 更新时写入并校验；
  * 按需读取 + 内存 LRU 缓存：
  *   - [load] 返回 [IrextBinaryRef]（bytes + binaryName + category + subCate）；
  *   - category/subCate 从索引（IrextIndexLoader）解析，索引查不到时按 bin 文件名
@@ -44,6 +47,13 @@ data class IrextBinaryRef(
 class IrextBinaryStore(
     private val context: Context,
     private val indexLoader: IrextIndexLoader,
+    /**
+     * 打开内置码库 zip 的可注入缝隙（测试以临时 fixture 替代生产 assets）。
+     * 默认读 assets/irext/irext-binaries.zip；返回 null = 内置 zip 不存在。
+     */
+    private val openBundledZip: () -> InputStream? = {
+        runCatching { context.assets.open(ZIP_ASSET) }.getOrNull()
+    },
 ) {
 
     /** 缓存锁（zip 读取与缓存读写均须串行，防止并发重复解压） */
@@ -55,6 +65,10 @@ class IrextBinaryStore(
     /** zip 根目录前缀（首次读取时发现，如 "irext-binaries_20260519/"），跨线程可见 */
     @Volatile
     private var rootPrefix: String? = null
+
+    /** 内置 zip 缺失/损坏只告警一次（下载优先：后续由 CodebaseUpdater 在线补齐） */
+    @Volatile
+    private var warnedBundledZipUnavailable = false
 
     /**
      * 按 bin 文件名读取码组。
@@ -94,28 +108,33 @@ class IrextBinaryStore(
     // ---------- zip 按需解压 ----------
 
     private fun readFromZip(ref: String): ByteArray? {
-        val assets = context.assets
-        // 优先按已知根目录前缀直接定位（避免 5126 条全量扫描）
-        val prefix = rootPrefix ?: discoverRootPrefix(assets)
-        val exact = prefix?.let { findEntry(assets) { name -> name == "$it$ref" } }
+        // 优先按已知根目录前缀直接定位（避免全量扫描）
+        val prefix = rootPrefix ?: discoverRootPrefix()
+        val exact = prefix?.let { findEntry { name -> name == "$it$ref" } }
         if (exact != null) return exact
         // 前缀不匹配（版本变化等）：退化为按文件名后缀全量扫描
-        return findEntry(assets) { name -> name.substringAfterLast('/') == ref }
+        return findEntry { name -> name.substringAfterLast('/') == ref }
     }
 
     /** 发现 zip 根目录前缀（取第一个 entry 的目录段），结果缓存（加锁防并发重复解压） */
-    private fun discoverRootPrefix(assets: AssetManager): String? {
+    private fun discoverRootPrefix(): String? {
         // 双检：已缓存直接返回，避免重复加锁解压
         rootPrefix?.let { return it }
         synchronized(lock) {
             rootPrefix?.let { return it }
+            val stream = openBundledZip()
+            if (stream == null) {
+                warnBundledZipUnavailable("内置码库 zip 不存在")
+                return null   // 下载优先：交由 CodebaseUpdater 在线路径补齐
+            }
             val prefix = try {
-                ZipInputStream(assets.open(ZIP_ASSET)).use { zip ->
-                    val first = zip.nextEntry ?: return null
-                    first.name.substringBefore('/').takeIf { it.isNotEmpty() }?.let { "$it/" }
+                ZipInputStream(stream).use { zip ->
+                    val first = zip.nextEntry
+                    first?.name?.substringBefore('/')?.takeIf { it.isNotEmpty() }?.let { "$it/" }
                 }
             } catch (e: Exception) {
-                null   // assets 缺失/损坏：返回 null，load 走全量扫描后同样失败
+                warnBundledZipUnavailable("内置码库 zip 损坏或不可读：${e.message}")
+                null
             }
             rootPrefix = prefix
             return prefix
@@ -123,21 +142,35 @@ class IrextBinaryStore(
     }
 
     /** 遍历 zip 条目，命中 [match] 即读出全部字节；无命中/异常返回 null */
-    private fun findEntry(assets: AssetManager, match: (String) -> Boolean): ByteArray? = try {
-        ZipInputStream(assets.open(ZIP_ASSET)).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                val name = entry.name
-                if (match(name)) {
-                    return@use readAll(zip)
+    private fun findEntry(match: (String) -> Boolean): ByteArray? {
+        val stream = openBundledZip() ?: return null   // 缺失已在 discoverRootPrefix 告警过
+        return try {
+            ZipInputStream(stream).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    if (match(name)) {
+                        return@use readAll(zip)
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
                 }
-                zip.closeEntry()
-                entry = zip.nextEntry
+                null
             }
-            null
+        } catch (e: Exception) {
+            warnBundledZipUnavailable("内置码库 zip 解析失败：${e.message}")
+            null   // 损坏 zip：绝不崩溃，返回 null
         }
-    } catch (e: Exception) {
-        null   // 资源缺失/损坏 zip：绝不崩溃，返回 null
+    }
+
+    /** 内置 zip 不可用只告警一次，提示走在线下载路径（避免刷屏） */
+    private fun warnBundledZipUnavailable(reason: String) {
+        if (warnedBundledZipUnavailable) return
+        synchronized(lock) {
+            if (warnedBundledZipUnavailable) return
+            warnedBundledZipUnavailable = true
+        }
+        Log.w(TAG, "$reason；将依赖 CodebaseUpdater 在线下载码库")
     }
 
     /** 从当前 entry 读到 EOF（ZipInputStream 的 entry.size 不可靠，手动流式读取） */
@@ -183,7 +216,9 @@ class IrextBinaryStore(
     }
 
     private companion object {
-        /** assets 内 zip 路径（计划 §1） */
+        private const val TAG = "IrextBinaryStore"
+
+        /** assets 内 zip 路径（计划 §1；可选资产，缺失时走在线下载） */
         const val ZIP_ASSET = "irext/irext-binaries.zip"
 
         /** filesDir 缓存目录（CodebaseUpdater 写入，优先于 assets zip） */
