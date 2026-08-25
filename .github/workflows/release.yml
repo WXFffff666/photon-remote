@@ -79,7 +79,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: Inject signing keystore (if secrets present)
+      - name: Require signing secrets (hard gate before build)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -87,8 +87,8 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::warning::KEYSTORE_BASE64 not set — release APK will use debug signing (not for distribution)"
-            exit 0
+            echo "::error::KEYSTORE_BASE64 is not set — refusing to build a debug-signed release. Configure signing secrets (see docs/ci-signing.md)."
+            exit 1
           fi
           echo "::add-mask::$KEYSTORE_PASSWORD"
           echo "::add-mask::$KEY_PASSWORD"
@@ -120,15 +120,10 @@ jobs:
       - name: Assemble Release
         run: ./gradlew :app:assembleRelease --stacktrace
 
-      - name: Assemble Debug (for release assets)
-        run: ./gradlew :app:assembleDebug --stacktrace
-
       - name: Verify APKs
         run: |
           ls -lh app/build/outputs/apk/release/ || true
-          ls -lh app/build/outputs/apk/debug/ || true
           test -f app/build/outputs/apk/release/PhotonRemote-release-v*.apk || (echo "Release APK not found" && ls -R app/build/outputs/apk/ && exit 1)
-          test -f app/build/outputs/apk/debug/PhotonRemote-debug-v*.apk || (echo "Debug APK not found" && ls -R app/build/outputs/apk/ && exit 1)
           echo "APK verification passed"
 
       - name: Verify signing
@@ -141,11 +136,8 @@ jobs:
           $APKSIGNER verify --verbose --print-certs app/build/outputs/apk/release/PhotonRemote-release-v*.apk || (echo "::warning::apksigner verify failed — check signing" && exit 1)
           # Ensure release is not using debug keystore (debug cert DN contains Android Debug)
           if $APKSIGNER verify --print-certs app/build/outputs/apk/release/PhotonRemote-release-v*.apk | grep -qi "Android Debug"; then
-            echo "::warning::Release APK appears signed with debug key — did signing secrets missing?"
-            if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-              echo "::error::Secrets were set but APK still debug-signed — fail"
-              exit 1
-            fi
+            echo "::error::Release APK is signed with a debug key — distribution forbidden"
+            exit 1
           else
             echo "Release signing looks valid (not debug)"
           fi
@@ -169,7 +161,6 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             app/build/outputs/apk/release/PhotonRemote-release-v*.apk
-            app/build/outputs/apk/debug/PhotonRemote-debug-v*.apk
 
       - name: Upload artifacts (backup)
         if: always()
@@ -178,5 +169,4 @@ jobs:
           name: release-apks-${{ steps.tag.outputs.tag }}
           path: |
             app/build/outputs/apk/release/PhotonRemote-*.apk
-            app/build/outputs/apk/debug/PhotonRemote-*.apk
           retention-days: 30

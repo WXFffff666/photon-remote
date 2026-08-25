@@ -10,7 +10,7 @@
   3. `$projectDir/keystore.properties`（即 `app/keystore.properties`）
   4. `/tmp/keystore.properties` / `/tmp/keystore/keystore.properties`
 - `release.yml` 在 CI 中用 `secrets.KEYSTORE_BASE64` 解码出 ` /tmp/photon-remote.jks` 并向上述全部候选路径写入 `keystore.properties`，因此无论哪条分支命中都能签名成功。
-- 若所有候选都不存在，`assembleRelease` 会回退 `debug` 签名并 `logger.warn("release keystore 缺失…")`，**禁止分发**。
+- 若所有候选都不存在，本地构建会回退 `debug` 签名（仅供本机调试，禁止分发）；CI `release.yml` 在构建前强制校验 `KEYSTORE_BASE64`，缺失即硬失败，且发布 APK 一经检出 debug 证书一律拒绝发布。
 
 ## 2. 本地（Windows）
 
