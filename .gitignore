@@ -124,6 +124,9 @@ temp/
 # Android / Gradle 工程
 # =========================
 local.properties
+# 签名凭证（含明文密码，任何位置都不入库；CI 由 secrets 注入临时副本）
+/keystore.properties
+app/keystore.properties
 *.iml
 .gradle/
 .kotlin/
@@ -139,5 +142,5 @@ captures/
 
 # IREXT 预编译 so（Todo 14 交付物，必须入库）：豁免全局 ignore 的 *.so 规则
 !app/src/main/jniLibs/**/libirdecode.so
-# IREXT 离线码库 zip（测试与离线使用，必须入库）：豁免全局 *.zip
-!app/src/main/assets/irext/irext-binaries.zip
+# 注：内置码库 zip 已移除（下载优先，见 app/src/main/assets/irext/README.md），
+# 二进制码组经 CodebaseUpdater 在线下载，不入库。
