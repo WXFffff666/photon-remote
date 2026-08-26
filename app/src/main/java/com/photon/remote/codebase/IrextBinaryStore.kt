@@ -32,7 +32,8 @@ data class IrextBinaryRef(
  *
  * 数据源优先级：**filesDir 缓存目录（filesDir/codedb/binaries/）> 内置 assets zip**
  * （assets/irext/irext-binaries.zip，根目录 irext-binaries_<version>/）。
- * 内置 zip 为**可选资产（下载优先）**：缺失或损坏时仅告警一次并返回 null，
+ * 内置 zip 为官方码表 irext-binaries_20260519.zip（sha256 24927d21…f1e1，5125 个 .bin，覆盖 index 全部引用）。
+ * 缺失/损坏时仍回退云端增量更新（CodebaseUpdater）：告警一次并返回 null。
  * 由上层引导走 CodebaseUpdater 在线下载路径，绝不崩溃。缓存由 CodebaseUpdater
  * 更新时写入并校验；
  * 按需读取 + 内存 LRU 缓存：

@@ -144,3 +144,6 @@ captures/
 !app/src/main/jniLibs/**/libirdecode.so
 # 注：内置码库 zip 已移除（下载优先，见 app/src/main/assets/irext/README.md），
 # 二进制码组经 CodebaseUpdater 在线下载，不入库。
+
+# 官方 irext 码表是刻意的二进制资产（覆盖用户全局 *.zip 忽略规则）
+!app/src/main/assets/irext/irext-binaries.zip
